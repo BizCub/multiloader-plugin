@@ -1,0 +1,27 @@
+plugins {
+    `kotlin-dsl`
+    `maven-publish`
+}
+
+group = "com.bizcub"
+version = "0.0.1"
+
+repositories {
+    mavenCentral()
+    gradlePluginPortal()
+    maven("https://maven.kikugie.dev/snapshots")
+}
+
+dependencies {
+    implementation("dev.kikugie:stonecutter:0.9")
+    implementation("me.modmuss50:mod-publish-plugin:1.1.0")
+}
+
+gradlePlugin {
+    plugins {
+        create("multiloader") {
+            id = "com.bizcub.multiloader"
+            implementationClass = "com.bizcub.multiloader.MultiLoaderPlugin"
+        }
+    }
+}
