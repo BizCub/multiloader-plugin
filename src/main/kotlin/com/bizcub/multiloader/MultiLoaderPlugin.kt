@@ -165,7 +165,7 @@ open class MultiLoader(private val project: Project) {
     val mod = Mod()
     inner class Mod {
         val mc: String get() = scc.version
-        val mcSpecified: String get() = propIf("version", mod.mc).toString()
+        val mcExact: String get() = propIf("version", mod.mc)
         val loader: String get() = scc.project.substringAfterLast("-")
         val id: String get() = modProp("id")
         val mixin: String get() = modProp("id").replace("_", "-")
@@ -175,8 +175,8 @@ open class MultiLoader(private val project: Project) {
         val modrinth: String get() = modProp("modrinth")
         val curseforge: String get() = modProp("curseforge")
         val github: String get() = modProp("github")
-        val pubStart: String get() = propIf("pub_start", mc).toString()
-        val pubEnd: String get() = propIf("pub_end", mc).toString()
+        val pubStart: String get() = propIf("pub_start", mc)
+        val pubEnd: String get() = propIf("pub_end", mc)
         val baseName: String get() = "${mod.mixin}-${mod.loader}"
         val baseVersion: String get() = "${mod.version}+${mod.pubStart}"
     }
@@ -184,18 +184,18 @@ open class MultiLoader(private val project: Project) {
     val reps = mutableListOf<Repository>()
     val deps = mutableListOf<Dependency>()
 
-    class Repository(val name: String)
-    class Dependency(val name: String, val impl: String) {
-        val id = name.split(":")[1]
-        val modImpl = "mod${impl.upperCaseFirst()}"
+    class Repository(val repository: String)
+    class Dependency(val configuration: String, val dependency: String) {
+        val id = dependency.split(":")[1]
+        val modConfiguration = "mod${configuration.upperCaseFirst()}"
     }
 
-    fun addRepository(name: String) {
-        reps.add(Repository(name))
+    fun addRepository(repository: String) {
+        reps.add(Repository(repository))
     }
 
-    fun addDependency(id: String, impl: String) {
-        deps.add(Dependency(id, impl))
+    fun addDependency(configuration: String, dependency: String) {
+        deps.add(Dependency(configuration, dependency))
     }
 
     val clientRunPath: String get() = "../../run/client"
@@ -215,7 +215,7 @@ open class MultiLoader(private val project: Project) {
     fun getProp(key: String) = prop(propName(key))
     fun setProp(key: String, value: Any?) = value.also { project.extra[versionExactlyProp(key)] = it }
     fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
-    fun propIf(key: String, fallback: String?) = prop(propName(key)) ?: fallback
+    fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
     fun versionProp(key: String) = "${mod.mc}.$key"
     fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
 
