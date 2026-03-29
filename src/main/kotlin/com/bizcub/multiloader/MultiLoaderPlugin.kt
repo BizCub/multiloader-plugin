@@ -151,6 +151,10 @@ open class MultiLoader(private val project: Project) {
         val zero = if (mod.mc.substring(startIndex).contains(".") && isObfuscated) "" else "0."
         setProp("neoforge", "${mod.mc.substring(startIndex)}.$zero${getProp("neoforge")}")
 
+        if (!isClothConfigAvailable) {
+            setProp("cloth_config", "17.0.144")
+        }
+
         createRunConfiguration()
     }
 
@@ -181,8 +185,8 @@ open class MultiLoader(private val project: Project) {
     val deps = mutableListOf<Dependency>()
 
     class Repository(val name: String)
-    class Dependency(val id: String, val impl: String) {
-        val name = id.split(":")[1]
+    class Dependency(val name: String, val impl: String) {
+        val id = name.split(":")[1]
         val modImpl = "mod${impl.upperCaseFirst()}"
     }
 
