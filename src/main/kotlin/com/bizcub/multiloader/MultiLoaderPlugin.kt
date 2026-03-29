@@ -25,6 +25,7 @@ fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 
 var runConfigurationMainText = ""
 var runConfigurationPublishText = ""
+var javaSCNumber = 0
 
 class MultiLoaderPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -99,14 +100,14 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.configure<JavaPluginExtension> {
-            val java = when {
+            javaSCNumber = when {
                 scp >= "26.1"   -> 25
                 scp >= "1.20.5" -> 21
                 scp >= "1.18"   -> 17
                 scp >= "1.17"   -> 16
                 else            -> 8
             }
-            val javaVersion = JavaVersion.toVersion(java)
+            val javaVersion = JavaVersion.toVersion(javaSCNumber)
             sourceCompatibility = javaVersion
             targetCompatibility = javaVersion
         }
@@ -177,6 +178,7 @@ open class MultiLoader(private val project: Project) {
         val github: String get() = modProp("github")
         val pubStart: String get() = propIf("pub_start", mc)
         val pubEnd: String get() = propIf("pub_end", mc)
+        val javaNumber: Int get() = javaSCNumber
         val baseName: String get() = "${mod.mixin}-${mod.loader}"
         val baseVersion: String get() = "${mod.version}+${mod.pubStart}"
     }
