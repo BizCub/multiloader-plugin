@@ -4,4 +4,4 @@ pluginManagement {
     }
 }
 
-rootProject.name = "multiloader"
+rootProject.name = "Multiloader Plugin"
