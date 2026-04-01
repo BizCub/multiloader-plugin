@@ -9,16 +9,9 @@ import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.Copy
 import org.gradle.jvm.tasks.Jar
-import org.gradle.kotlin.dsl.configure
-import org.gradle.kotlin.dsl.extra
-import org.gradle.kotlin.dsl.invoke
-import org.gradle.kotlin.dsl.named
-import org.gradle.kotlin.dsl.register
-import org.gradle.kotlin.dsl.getByType
-import org.gradle.kotlin.dsl.withType
+import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.File
-import kotlin.io.readText
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -148,9 +141,9 @@ open class MultiLoader(private val project: Project) {
 
         setProp("forge", "${mod.mc}-${getProp("forge")}")
 
-        val startIndex = if (!isObfuscated) 0 else 2
-        val zero = if (mod.mc.substring(startIndex).contains(".") && isObfuscated) "" else "0."
-        setProp("neoforge", "${mod.mc.substring(startIndex)}.$zero${getProp("neoforge")}")
+        val mc = if (isObfuscated) mod.mc.substring(2) else mod.mc
+        val zero = if (mc.contains(".")) "" else "0."
+        setProp("neoforge", "$mc.$zero${getProp("neoforge")}")
 
         if (!isClothConfigAvailable) {
             setProp("cloth_config", "17.0.144")
