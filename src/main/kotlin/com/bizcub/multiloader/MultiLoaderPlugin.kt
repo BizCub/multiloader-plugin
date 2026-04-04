@@ -11,7 +11,12 @@ import org.gradle.api.tasks.Copy
 import org.gradle.jvm.tasks.Jar
 import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.json.JSONObject
+import org.w3c.dom.Element
+import org.w3c.dom.Node
 import java.io.File
+import java.net.URL
+import javax.xml.parsers.DocumentBuilderFactory
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -139,11 +144,13 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
-        setProp("forge", "${mod.mc}-${getProp("forge")}")
+        //setProp("forge", "${mod.mc}-${getProp("forge")}")
+        forge(mod.mc)
 
-        val mc = if (isObfuscated) mod.mc.substring(2) else mod.mc
-        val zero = if (mc.contains(".")) "" else "0."
-        setProp("neoforge", "$mc.$zero${getProp("neoforge")}")
+        var mc = if (isObfuscated) mod.mc.substring(2) else mod.mc
+        if (!mc.substring(if (isObfuscated) 2 else 3).contains(".")) mc += ".0"
+        //setProp("neoforge", "$mc.${getProp("neoforge")}")
+        neoForge(mc)
 
         if (!isClothConfigAvailable) {
             setProp("cloth_config", "17.0.144")
@@ -226,6 +233,36 @@ open class MultiLoader(private val project: Project) {
         Pair("3 Generation Source", "genSource")
     )
     val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
+
+    fun forge(version: String) {
+        val jsonString = URL("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json").readText()
+        val jsonObject = JSONObject(jsonString)
+        val array = jsonObject.getJSONArray(version)
+
+        setProp("forge", "${mod.mc}-${array.get(array.length()-1).toString().split(version)[1].substring(1)}")
+    }
+
+    fun neoForge(version: String) {
+        val xmlString = URL("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml").readText()
+        val factory = DocumentBuilderFactory.newInstance()
+        val builder = factory.newDocumentBuilder()
+        val document = builder.parse(xmlString.byteInputStream())
+        document.documentElement.normalize()
+        val nodeList = document.getElementsByTagName("versions")
+        val node = nodeList.item(0)
+        var versions = listOf<String>()
+        if (node.nodeType == Node.ELEMENT_NODE) {
+            val element = node as Element
+            versions = element.textContent.replace(" ", "").split("\n")
+        }
+
+        versions.reversed().forEach { vers ->
+            if (vers.startsWith("$version.")) {
+                setProp("neoforge", "$version.${vers.split(version).last().substring(1)}")
+                return
+            }
+        }
+    }
 
     fun createRunConfiguration() {
         val filePath = project.rootDir.resolve(".idea/runConfigurations")
