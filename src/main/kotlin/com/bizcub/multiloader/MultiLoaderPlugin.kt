@@ -11,12 +11,7 @@ import org.gradle.api.tasks.Copy
 import org.gradle.jvm.tasks.Jar
 import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
-import org.json.JSONObject
-import org.w3c.dom.Element
-import org.w3c.dom.Node
 import java.io.File
-import java.net.URL
-import javax.xml.parsers.DocumentBuilderFactory
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -36,6 +31,10 @@ class MultiLoaderPlugin : Plugin<Project> {
 }
 
 open class MultiLoader(private val project: Project) {
+    fun stonecutterKts() {
+        println("stonecutterKts")
+    }
+
     fun init() {
         project.extra["loom.platform"] = mod.loader
         if (isObfuscated) project.extra["fabric.loom.disableObfuscation"] = false
@@ -144,16 +143,14 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
-        //setProp("forge", "${mod.mc}-${getProp("forge")}")
-        forge(mod.mc)
-
         var mc = if (isObfuscated) mod.mc.substring(2) else mod.mc
         if (!mc.substring(if (isObfuscated) 2 else 3).contains(".")) mc += ".0"
-        //setProp("neoforge", "$mc.${getProp("neoforge")}")
-        neoForge(mc)
+        updateDependencies.neoForge(mc)
+
+        updateDependencies.forge(mod.mc)
 
         if (!isClothConfigAvailable) {
-            setProp("cloth_config", "17.0.144")
+            setProp("cloth-config", "17.0.144")
         }
 
         createRunConfiguration()
@@ -169,19 +166,21 @@ open class MultiLoader(private val project: Project) {
         val mcExact: String get() = propIf("version", mod.mc)
         val loader: String get() = scc.project.substringAfterLast("-")
         val id: String get() = modProp("id")
-        val mixin: String get() = modProp("id").replace("_", "-")
+        val mixin: String get() = mod.id.replace("_", "-")
         val name: String get() = modProp("name")
         val description: String get() = modProp("description")
         val version: String get() = modProp("version")
         val modrinth: String get() = modProp("modrinth")
         val curseforge: String get() = modProp("curseforge")
         val github: String get() = modProp("github")
-        val pubStart: String get() = propIf("pub_start", mc)
-        val pubEnd: String get() = propIf("pub_end", mc)
+        val pubStart: String get() = propIf("pub-start", mc)
+        val pubEnd: String get() = propIf("pub-end", mc)
         val javaNumber: Int get() = javaSCNumber
         val baseName: String get() = "${mod.mixin}-${mod.loader}"
         val baseVersion: String get() = "${mod.version}+${mod.pubStart}"
     }
+
+    val updateDependencies = UpdateDependencies(project, this)
 
     val reps = mutableListOf<Repository>()
     val deps = mutableListOf<Dependency>()
@@ -234,36 +233,6 @@ open class MultiLoader(private val project: Project) {
     )
     val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
 
-    fun forge(version: String) {
-        val jsonString = URL("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json").readText()
-        val jsonObject = JSONObject(jsonString)
-        val array = jsonObject.getJSONArray(version)
-
-        setProp("forge", "${mod.mc}-${array.get(array.length()-1).toString().split(version)[1].substring(1)}")
-    }
-
-    fun neoForge(version: String) {
-        val xmlString = URL("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml").readText()
-        val factory = DocumentBuilderFactory.newInstance()
-        val builder = factory.newDocumentBuilder()
-        val document = builder.parse(xmlString.byteInputStream())
-        document.documentElement.normalize()
-        val nodeList = document.getElementsByTagName("versions")
-        val node = nodeList.item(0)
-        var versions = listOf<String>()
-        if (node.nodeType == Node.ELEMENT_NODE) {
-            val element = node as Element
-            versions = element.textContent.replace(" ", "").split("\n")
-        }
-
-        versions.reversed().forEach { vers ->
-            if (vers.startsWith("$version.")) {
-                setProp("neoforge", "$version.${vers.split(version).last().substring(1)}")
-                return
-            }
-        }
-    }
-
     fun createRunConfiguration() {
         val filePath = project.rootDir.resolve(".idea/runConfigurations")
         filePath.mkdirs()
@@ -288,5 +257,13 @@ open class MultiLoader(private val project: Project) {
             val task = fileName.lowerCaseFirst()
             createFile(fileName, runConfigurationPublishText, name, task)
         }
+    }
+
+    fun getDep(key: String): String {
+        return updateDependencies.getDep(key)
+    }
+
+    fun createDepFile() {
+        updateDependencies.createDepFile()
     }
 }
