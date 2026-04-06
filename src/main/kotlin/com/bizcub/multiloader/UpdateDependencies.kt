@@ -17,24 +17,39 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
 
     fun getDep(key: String): String {
 
-        fun downloadDependency(): String {
-            println("[Multiloader] Downloading dependency...")
+        fun downloadDependency(message: String): String {
+            println("[Multiloader] Downloading dependency '$key'$message ...")
 
-            val version = getLastModrinthVersion(key)
-            if (version != "not_found") {
-                addToConfig(mod.mc, mod.loader, key, version)
-                return version
+            if (key == "fabric") {
+                val fabric = fabric()
+                addToConfig("loader", fabric)
+                return fabric
+            } else if (key == "forge") {
+                val forge = forge()
+                addToConfig("loader", forge)
+                return forge
+            } else if (key == "neoforge") {
+                val neoForge = neoForge()
+                addToConfig("loader", neoForge)
+                return neoForge
             } else {
-                addToConfig(mod.mc, mod.loader, key, ml.getProp(key) as String)
-                return ml.getProp(key) as String
+                val version = getLastModrinthVersion(key)
+                if (version != "not_found") {
+                    addToConfig(key, version)
+                    return version
+                } else {
+                    addToConfig(key, ml.getProp(key) as String)
+                    return ml.getProp(key) as String
+                }
             }
         }
 
         if (isUpdateEnabled) {
-            return downloadDependency()
+            return downloadDependency("")
         } else {
-            val configValue = getConfigValue(mod.mc, mod.loader, key)
-            return configValue ?: downloadDependency()
+            val innerKey = if (key == "fabric" || key == "forge" || key == "neoforge") "loader" else key
+            val configValue = getConfigValue(mod.mc, mod.loader, innerKey)
+            return configValue ?: downloadDependency(", because it was not found in the config")
         }
     }
 
@@ -54,7 +69,54 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         return "not_found"
     }
 
-    fun addToConfig(versionKey: String, outerKey: String, innerKey: String, value: String) {
+    fun fabric(): String {
+        val fabricVersionsList = getXMLVersionList("https://maven.fabricmc.net/net/fabricmc/fabric-loader/maven-metadata.xml")
+        return fabricVersionsList.reversed()[1]
+    }
+
+    fun forge(): String {
+        val mc = mod.mc
+
+        val jsonString = URL("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json").readText()
+        val jsonObject = JSONObject(jsonString)
+        val array = jsonObject.getJSONArray(mc)
+
+        return "${mod.mc}-${array.get(array.length()-1).toString().split(mc)[1].substring(1)}"
+    }
+
+    fun neoForge(): String {
+        var mc = if (ml.isObfuscated) mod.mc.substring(2) else mod.mc
+        if (!mc.substring(if (ml.isObfuscated) 2 else 3).contains(".")) mc += ".0"
+
+        val neoForgeVersionsList = getXMLVersionList("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml")
+        neoForgeVersionsList.reversed().forEach { vers ->
+            if (vers.startsWith("$mc.")) {
+                return "$mc.${vers.split(mc).last().substring(1)}"
+            }
+        }
+        return "neoForge"
+    }
+
+    fun getXMLVersionList(url: String): List<String> {
+        val xmlString = URL(url).readText()
+        val factory = DocumentBuilderFactory.newInstance()
+        val builder = factory.newDocumentBuilder()
+        val document = builder.parse(xmlString.byteInputStream())
+        document.documentElement.normalize()
+        val nodeList = document.getElementsByTagName("versions")
+        val node = nodeList.item(0)
+        var versions = listOf<String>()
+        if (node.nodeType == Node.ELEMENT_NODE) {
+            val element = node as Element
+            versions = element.textContent.replace(" ", "").split("\n")
+        }
+        return versions
+    }
+
+    fun addToConfig(innerKey: String, value: String) {
+        val versionKey = mod.mc
+        val outerKey = mod.loader
+
         val root: JSONObject = if (file.exists() && file.isFile) {
             try {
                 JSONObject(file.readText())
@@ -108,49 +170,5 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         filePath.mkdirs()
         file.createNewFile()
         if (isUpdateEnabled || file.readText().isEmpty()) file.writeText("{}")
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    fun forge(version: String) {
-        val jsonString = URL("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json").readText()
-        val jsonObject = JSONObject(jsonString)
-        val array = jsonObject.getJSONArray(version)
-
-        ml.setProp("forge", "${mod.mc}-${array.get(array.length()-1).toString().split(version)[1].substring(1)}")
-    }
-
-    fun neoForge(version: String) {
-        val xmlString = URL("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml").readText()
-        val factory = DocumentBuilderFactory.newInstance()
-        val builder = factory.newDocumentBuilder()
-        val document = builder.parse(xmlString.byteInputStream())
-        document.documentElement.normalize()
-        val nodeList = document.getElementsByTagName("versions")
-        val node = nodeList.item(0)
-        var versions = listOf<String>()
-        if (node.nodeType == Node.ELEMENT_NODE) {
-            val element = node as Element
-            versions = element.textContent.replace(" ", "").split("\n")
-        }
-
-        versions.reversed().forEach { vers ->
-            if (vers.startsWith("$version.")) {
-                ml.setProp("neoforge", "$version.${vers.split(version).last().substring(1)}")
-                return
-            }
-        }
     }
 }

@@ -45,9 +45,9 @@ open class MultiLoader(private val project: Project) {
 
         project.version = mod.baseVersion
 
-        project.configurations.all {
-            resolutionStrategy.force("net.fabricmc:fabric-loader:latest.release")
-        }
+//        project.configurations.all {
+//            resolutionStrategy.force("net.fabricmc:fabric-loader:latest.release")
+//        }
 
         project.tasks {
             publishPlatforms.forEach { publish ->
@@ -142,12 +142,6 @@ open class MultiLoader(private val project: Project) {
                 tagName.set("v${mod.version}-${mod.loader}+${mod.pubStart}")
             }
         }
-
-        var mc = if (isObfuscated) mod.mc.substring(2) else mod.mc
-        if (!mc.substring(if (isObfuscated) 2 else 3).contains(".")) mc += ".0"
-        updateDependencies.neoForge(mc)
-
-        updateDependencies.forge(mod.mc)
 
         if (!isClothConfigAvailable) {
             setProp("cloth-config", "17.0.144")
@@ -260,7 +254,16 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun getDep(key: String): String {
-        return updateDependencies.getDep(key)
+        val dep = updateDependencies.getDep(key)
+
+//        if (key == "fabric") {
+//            project.configurations.all {
+//                println("net.fabricmc:fabric-loader:$dep")
+//                resolutionStrategy.force("net.fabricmc:fabric-loader:$dep")
+//            }
+//        }
+
+        return dep
     }
 
     fun createDepFile() {
