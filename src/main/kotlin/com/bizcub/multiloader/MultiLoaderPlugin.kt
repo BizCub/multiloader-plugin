@@ -31,10 +31,6 @@ class MultiLoaderPlugin : Plugin<Project> {
 }
 
 open class MultiLoader(private val project: Project) {
-    fun stonecutterKts() {
-        println("stonecutterKts")
-    }
-
     fun init() {
         project.extra["loom.platform"] = mod.loader
         if (isObfuscated) project.extra["fabric.loom.disableObfuscation"] = false
