@@ -56,11 +56,21 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     fun getLastModrinthVersion(id: String): String {
         val json = JSONArray(URL("https://api.modrinth.com/v2/project/$id/version").readText())
 
+        fun checkAppropriateVersions(gameVersion: String): Boolean {
+            if (ml.prop("multiloader.enableAdvancedVersionSearch") == "true") {
+                if (mod.mc.contains("$gameVersion.")) {
+                    println(gameVersion)
+                    return true
+                }
+            }
+            return gameVersion == mod.mc
+        }
+
         json.forEachIndexed { i, _ ->
             val obj = json.getJSONObject(i)
             obj.getJSONArray("game_versions").forEach { gameVersion ->
                 obj.getJSONArray("loaders").forEach { loader ->
-                    if (gameVersion == mod.mc && loader == mod.loader) {
+                    if (checkAppropriateVersions(gameVersion.toString()) && loader == mod.loader) {
                         return obj.getString("version_number")
                     }
                 }
