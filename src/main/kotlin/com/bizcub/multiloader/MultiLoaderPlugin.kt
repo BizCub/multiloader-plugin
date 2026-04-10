@@ -110,7 +110,10 @@ open class MultiLoader(private val project: Project) {
             displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
             changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
             version.set(mod.version)
-            type.set(STABLE)
+            val releaseType = if (mod.version.contains("-beta.")) BETA
+            else if (mod.version.contains("-alpha.")) ALPHA
+            else STABLE
+            type.set(releaseType)
             modLoaders.add(mod.loader)
             if (isFabric) modLoaders.add("quilt")
 

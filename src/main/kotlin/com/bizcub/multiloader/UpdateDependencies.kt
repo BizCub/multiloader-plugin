@@ -59,7 +59,6 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         fun checkAppropriateVersions(gameVersion: String): Boolean {
             if (ml.prop("multiloader.enableAdvancedVersionSearch") == "true") {
                 if (mod.mc.contains("$gameVersion.")) {
-                    println(gameVersion)
                     return true
                 }
             }
