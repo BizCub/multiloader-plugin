@@ -245,13 +245,23 @@ open class MultiLoader(private val project: Project) {
         }
 
         if (!isObfuscated) {
+            val allVersionsList = updateDependencies.getMinecraftVersionList("https://piston-meta.mojang.com/mc/game/version_manifest.json")
+
             val list = mutableListOf<String>()
             val publishVersion = if (version.split(".").count() == 3) {
                 version.substring(0, version.length - 2)
             } else version
 
+            var lastVersion = version
+            for (vers in allVersionsList) {
+                if (vers.startsWith(publishVersion)) {
+                    lastVersion = vers
+                    break
+                }
+            }
+
             list.add(publishVersion)
-            list.add(version)
+            list.add(lastVersion)
             return list
         } else {
             val list = mutableListOf<String>()

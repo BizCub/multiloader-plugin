@@ -122,6 +122,21 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         return versions
     }
 
+    fun getMinecraftVersionList(url: String): List<String> {
+        val jsonString = URL(url).readText()
+        val jsonObject = JSONObject(jsonString)
+        val array = jsonObject.getJSONArray("versions")
+
+        val versionsList = mutableListOf<String>()
+        for (i in 0 until array.length()) {
+            val element = array.getJSONObject(i)
+            if (element.getString("type") == "release") {
+                versionsList.add(element.getString("id"))
+            }
+        }
+        return versionsList
+    }
+
     fun addToConfig(innerKey: String, value: String) {
         val versionKey = mod.mc
         val outerKey = mod.loader
