@@ -35,11 +35,20 @@ open class MultiLoader(private val project: Project) {
         project.extra["loom.platform"] = mod.loader
         if (isObfuscated) project.extra["fabric.loom.disableObfuscation"] = false
 
-        project.extensions.getByType(BasePluginExtension::class.java).apply {
-            archivesName.set("${mod.mixin}-${mod.loader}")
+        var pubStart = mod.pubStart
+        var pubEnd = mod.pubEnd
+
+        if (prop("multiloader.editPublishVersions") == "true") {
+            val publishVersionList = getPublishVersion(mod.mc)
+            pubStart = propIf("pub-start", publishVersionList.first())
+            pubEnd = propIf("pub-end", publishVersionList.last())
         }
 
-        project.version = "${mod.version}+${mod.pubStart}"
+        project.extensions.getByType(BasePluginExtension::class.java).apply {
+            archivesName.set("${mod.mixin}-${mod.version}")
+        }
+
+        project.version = "${mod.loader}+$pubStart"
 
 //        project.configurations.all {
 //            resolutionStrategy.force("net.fabricmc:fabric-loader:latest.release")
@@ -103,15 +112,6 @@ open class MultiLoader(private val project: Project) {
             val javaVersion = JavaVersion.toVersion(javaSCNumber)
             sourceCompatibility = javaVersion
             targetCompatibility = javaVersion
-        }
-
-        var pubStart = mod.pubStart
-        var pubEnd = mod.pubEnd
-
-        if (prop("multiloader.editPublishVersions") == "true") {
-            val publishVersionList = getPublishVersion(mod.mc)
-            pubStart = propIf("pub-start", publishVersionList.first())
-            pubEnd = propIf("pub-end", publishVersionList.last())
         }
 
         project.extensions.configure<ModPublishExtension>("publishMods") {
