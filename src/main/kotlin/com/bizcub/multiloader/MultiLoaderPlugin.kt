@@ -36,10 +36,10 @@ open class MultiLoader(private val project: Project) {
         if (isObfuscated) project.extra["fabric.loom.disableObfuscation"] = false
 
         project.extensions.getByType(BasePluginExtension::class.java).apply {
-            archivesName.set(mod.baseName)
+            archivesName.set("${mod.mixin}-${mod.loader}")
         }
 
-        project.version = mod.baseVersion
+        project.version = "${mod.version}+${mod.pubStart}"
 
 //        project.configurations.all {
 //            resolutionStrategy.force("net.fabricmc:fabric-loader:latest.release")
@@ -105,9 +105,18 @@ open class MultiLoader(private val project: Project) {
             targetCompatibility = javaVersion
         }
 
+        var pubStart = mod.pubStart
+        var pubEnd = mod.pubEnd
+
+        if (prop("multiloader.editPublishVersions") == "true") {
+            val publishVersionList = getPublishVersion(mod.mc)
+            pubStart = propIf("pub-start", publishVersionList.first())
+            pubEnd = propIf("pub-end", publishVersionList.last())
+        }
+
         project.extensions.configure<ModPublishExtension>("publishMods") {
             fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
-            displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
+            displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
             changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
             version.set(mod.version)
             val releaseType = if (mod.version.contains("-beta.")) BETA
@@ -121,8 +130,8 @@ open class MultiLoader(private val project: Project) {
                 projectId.set(mod.modrinth)
                 accessToken.set(tokenDir("modrinth"))
                 minecraftVersionRange {
-                    start.set(mod.pubStart)
-                    end.set(mod.pubEnd)
+                    start.set(pubStart)
+                    end.set(pubEnd)
                     includeSnapshots.set(true)
                 }
             }
@@ -130,15 +139,15 @@ open class MultiLoader(private val project: Project) {
                 projectId.set(mod.curseforge)
                 accessToken.set(tokenDir("curseforge"))
                 minecraftVersionRange {
-                    start.set(mod.pubStart)
-                    end.set(mod.pubEnd)
+                    start.set(pubStart)
+                    end.set(pubEnd)
                 }
             }
             github {
                 accessToken.set(tokenDir("github"))
                 repository.set("BizCub/${mod.github}")
                 commitish.set("master")
-                tagName.set("v${mod.version}-${mod.loader}+${mod.pubStart}")
+                tagName.set("v${mod.version}-${mod.loader}+$pubStart")
             }
         }
 
@@ -169,8 +178,6 @@ open class MultiLoader(private val project: Project) {
         val pubStart: String get() = propIf("pub-start", mc)
         val pubEnd: String get() = propIf("pub-end", mc)
         val javaNumber: Int get() = javaSCNumber
-        val baseName: String get() = "${mod.mixin}-${mod.loader}"
-        val baseVersion: String get() = "${mod.version}+${mod.pubStart}"
     }
 
     val updateDependencies = UpdateDependencies(project, this)
@@ -212,6 +219,57 @@ open class MultiLoader(private val project: Project) {
     fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
     fun versionProp(key: String) = "${mod.mc}.$key"
     fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
+
+    val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1")
+
+    fun getPublishVersion(version: String): List<String> {
+
+        fun calculate(version: String): List<String> {
+            fun add(int: Int): Int {
+                return int + 1
+            }
+
+            fun remove(int: Int): Int {
+                return if (int - 1 >= 0) {
+                    int - 1
+                } else int
+            }
+
+            val split = version.split(".")
+            val strVersion = "${split[0]}.${split[1]}"
+            val pubVersion = if (split.count() != 2) {
+                split[2].toInt()
+            } else 0
+
+            return listOf("$strVersion.${remove(pubVersion)}", "$strVersion.${add(pubVersion)}")
+        }
+
+        if (!isObfuscated) {
+            val list = mutableListOf<String>()
+            val publishVersion = if (version.split(".").count() == 3) {
+                version.substring(0, version.length - 2)
+            } else version
+
+            list.add(publishVersion)
+            list.add(version)
+            return list
+        } else {
+            val list = mutableListOf<String>()
+            for (i in 0..1) {
+                var publishVersion = version
+                while (true) {
+                    val tempVersion = calculate(publishVersion)[i]
+                    if (hotfixesList.contains(if (i == 0) publishVersion else tempVersion)) {
+                        publishVersion = tempVersion
+                    } else break
+                }
+                if (publishVersion.endsWith(".0"))
+                    publishVersion = publishVersion.substring(0, publishVersion.length - 2)
+                list.add(publishVersion)
+            }
+            return list
+        }
+    }
 
     val mainTasks = listOf(
         Pair("0 Run Client", "runActiveClient"),
