@@ -89,6 +89,7 @@ open class MultiLoader(private val project: Project) {
             properties(
                 listOf("fabric.mod.json", "META-INF/*.toml"),
                 "ModMenu"       to $$"$ModMenu",
+                "Server"       to $$"$Server",
                 "id"            to mod.id,
                 "mixin"         to mod.mixin,
                 "name"          to mod.name,
@@ -323,12 +324,11 @@ open class MultiLoader(private val project: Project) {
     fun getDep(key: String): String {
         val dep = updateDependencies.getDep(key)
 
-//        if (key == "fabric") {
-//            project.configurations.all {
-//                println("net.fabricmc:fabric-loader:$dep")
-//                resolutionStrategy.force("net.fabricmc:fabric-loader:$dep")
-//            }
-//        }
+        if (key == "fabric") {
+            project.configurations.all {
+                resolutionStrategy.force("net.fabricmc:fabric-loader:$dep")
+            }
+        }
 
         return dep
     }
