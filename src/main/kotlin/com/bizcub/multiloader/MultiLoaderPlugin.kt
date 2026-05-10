@@ -1,5 +1,6 @@
 package com.bizcub.multiloader
 
+import dev.kikugie.fletching_table.extension.FletchingTableExtension
 import dev.kikugie.stonecutter.build.StonecutterBuildExtension
 import me.modmuss50.mpp.ModPublishExtension
 import org.gradle.api.JavaVersion
@@ -157,6 +158,14 @@ open class MultiLoader(private val project: Project) {
         }
 
         createRunConfiguration()
+    }
+
+    fun access() {
+        val ft = project.extensions.getByType<FletchingTableExtension>()
+
+        ft.accessConverter.register("main") {
+            add("${mod.mixin}.ct")
+        }
     }
 
     val sc get() = project.extensions.getByType<StonecutterBuildExtension>()
