@@ -345,5 +345,10 @@ open class MultiLoader(private val project: Project) {
 
     fun createDepFile() {
         updateDependencies.createDepFile()
+
+        val iconFile = project.file("src/main/resources/icon.png")
+        if (iconFile.exists()) {
+            iconFile.copyTo(project.file(".idea/icon.png"), true)
+        }
     }
 }
