@@ -198,7 +198,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun addRepository(repository: String) {
-        reps.add(Repository(repository))
+        reps.add(Repository("https://$repository"))
     }
 
     fun addDependency(configuration: String, dependency: String) {
@@ -206,7 +206,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun addRepositoryWithDependency(repository: String, configuration: String, dependency: String) {
-        reps.add(Repository(repository))
+        reps.add(Repository("https://$repository"))
         deps.add(Dependency(configuration, dependency))
     }
 
