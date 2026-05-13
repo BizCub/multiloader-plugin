@@ -46,14 +46,10 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.extensions.getByType(BasePluginExtension::class.java).apply {
-            archivesName.set("${mod.mixin}-${mod.version}")
+            archivesName.set(mod.mixin)
         }
 
-        project.version = "${mod.loader}+$pubStart"
-
-//        project.configurations.all {
-//            resolutionStrategy.force("net.fabricmc:fabric-loader:latest.release")
-//        }
+        project.version = "${mod.version}-${mod.loader}+$pubStart"
 
         project.tasks {
             publishPlatforms.forEach { publish ->
@@ -95,7 +91,7 @@ open class MultiLoader(private val project: Project) {
                 "mixin"         to mod.mixin,
                 "name"          to mod.name,
                 "description"   to mod.description,
-                "version"       to mod.version,
+                "version"       to project.version,
                 "modrinth"      to mod.modrinth,
                 "github"        to mod.github,
                 "author"        to "Bizarre Cube",
@@ -120,7 +116,7 @@ open class MultiLoader(private val project: Project) {
             fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
             displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
             changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
-            version.set(mod.version)
+            version.set(project.version.toString())
             val releaseType = if (mod.version.contains("-beta.")) BETA
             else if (mod.version.contains("-alpha.")) ALPHA
             else STABLE
@@ -149,7 +145,7 @@ open class MultiLoader(private val project: Project) {
                 accessToken.set(tokenDir("github"))
                 repository.set("BizCub/${mod.github}")
                 commitish.set("master")
-                tagName.set("v${mod.version}-${mod.loader}+$pubStart")
+                tagName.set("v${project.version}")
             }
         }
 
@@ -206,6 +202,11 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun addDependency(configuration: String, dependency: String) {
+        deps.add(Dependency(configuration, dependency))
+    }
+
+    fun addRepositoryWithDependency(repository: String, configuration: String, dependency: String) {
+        reps.add(Repository(repository))
         deps.add(Dependency(configuration, dependency))
     }
 
