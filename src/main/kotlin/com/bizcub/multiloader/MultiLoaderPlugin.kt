@@ -153,6 +153,8 @@ open class MultiLoader(private val project: Project) {
             setProp("cloth-config", "17.0.144")
         }
 
+        if (isNeoForge) addDependency("maven.neoforged.net/releases")
+
         createRunConfiguration()
     }
 
@@ -188,6 +190,23 @@ open class MultiLoader(private val project: Project) {
 
     val updateDependencies = UpdateDependencies(project, this)
 
+    fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
+        project.extensions.configure<ModPublishExtension>("publishMods") {
+            modrinth {
+                when (requirement) {
+                    "requires" -> requires(mrSlug)
+                    "optional" -> optional(mrSlug)
+                }
+            }
+            curseforge {
+                when (requirement) {
+                    "requires" -> requires(cfSlug)
+                    "optional" -> optional(cfSlug)
+                }
+            }
+        }
+    }
+
     val reps = mutableListOf<Repository>()
     val deps = mutableListOf<Dependency>()
 
@@ -197,7 +216,7 @@ open class MultiLoader(private val project: Project) {
         val modConfiguration = "mod${configuration.upperCaseFirst()}"
     }
 
-    fun addRepository(repository: String) {
+    fun addDependency(repository: String) {
         reps.add(Repository("https://$repository"))
     }
 
@@ -205,7 +224,7 @@ open class MultiLoader(private val project: Project) {
         deps.add(Dependency(configuration, dependency))
     }
 
-    fun addRepositoryWithDependency(repository: String, configuration: String, dependency: String) {
+    fun addDependency(repository: String, configuration: String, dependency: String) {
         reps.add(Repository("https://$repository"))
         deps.add(Dependency(configuration, dependency))
     }
@@ -297,13 +316,13 @@ open class MultiLoader(private val project: Project) {
         Pair("0 Run Server", "runActiveServer"),
         Pair("1 Build Active", "buildActive"),
         Pair("1 Build All", "buildAndCollect"),
-        Pair("2 Publish Mods", "PublishMods"),
+        Pair("2 Publish All", "PublishAll"),
         Pair("2 Publish Modrinth", "PublishModrinth"),
         Pair("2 Publish CurseForge", "PublishCurseforge"),
         Pair("2 Publish GitHub", "PublishGithub"),
         Pair("3 Generation Source", "genSource")
     )
-    val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
+    val publishPlatforms = listOf("All", "Modrinth", "Curseforge", "Github")
 
     fun createRunConfiguration() {
         val filePath = project.rootDir.resolve(".idea/runConfigurations")
