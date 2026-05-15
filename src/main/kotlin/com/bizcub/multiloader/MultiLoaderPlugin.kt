@@ -153,6 +153,7 @@ open class MultiLoader(private val project: Project) {
             setProp("cloth-config", "17.0.144")
         }
 
+        addDependency("api.modrinth.com/maven")
         if (isNeoForge) addDependency("maven.neoforged.net/releases")
 
         createRunConfiguration()
