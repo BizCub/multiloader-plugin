@@ -234,6 +234,12 @@ open class MultiLoader(private val project: Project) {
     val serverRunPath: String get() = "../../run/server"
     val scriptPath: String get() = "../../mod.gradle.kts"
 
+    val ctFabricPath: String get() = "src/main/resources/${mod.mixin}.ct"
+    val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
+    val ctForgeArchPath: String get() = "build/generated/stonecutter/main/resources/${mod.mixin}.ct"
+    val atForgePath: String get() = "build/sourceSets/main/META-INF/accesstransformer.cfg"
+    val atNeoForgePath: String get() = "build/resources/main/META-INF/accesstransformer.cfg"
+
     val isFabric: Boolean get() = mod.loader == "fabric"
     val isForge: Boolean get() = mod.loader == "forge"
     val isNeoForge: Boolean get() = mod.loader == "neoforge"
