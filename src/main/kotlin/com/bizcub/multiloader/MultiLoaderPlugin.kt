@@ -259,6 +259,22 @@ open class MultiLoader(private val project: Project) {
 
     val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1")
 
+    fun getMinCompatVersion(version: String): String {
+        return if (sc.eval(version, ">=26.1")) {
+            if (version.count { it == '.' } >= 2) {
+                version.reversed().split(".", limit = 2).last().reversed()
+            } else version
+        } else {
+            if (hotfixesList.contains(version)) {
+                if (version.count { it == '.' } >= 2) {
+                    val minorVers = version.substringAfterLast(".").toInt() - 1
+                    val minorVersStr = if (minorVers == 0) "" else ".$minorVers"
+                    "${version.reversed().split(".", limit = 2).last().reversed()}$minorVersStr"
+                } else version
+            } else version
+        }
+    }
+
     fun getPublishVersion(version: String): List<String> {
 
         fun calculate(version: String): List<String> {
