@@ -257,7 +257,7 @@ open class MultiLoader(private val project: Project) {
     fun versionProp(key: String) = "${mod.mc}.$key"
     fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
 
-    val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1")
+    val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
 
     fun getMinCompatVersion(version: String): String {
         return if (sc.eval(version, ">=26.1")) {
