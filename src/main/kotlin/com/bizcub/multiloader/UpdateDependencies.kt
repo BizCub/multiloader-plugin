@@ -48,7 +48,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             return downloadDependency("")
         } else {
             val innerKey = if (key == "fabric" || key == "forge" || key == "neoforge") "loader" else key
-            val configValue = getConfigValue(mod.mc, mod.loader, innerKey)
+            val configValue = getConfigValue(mod.mcExact, mod.loader, innerKey)
             return configValue ?: downloadDependency(", because it was not found in the config")
         }
     }
@@ -58,11 +58,11 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
 
         fun checkAppropriateVersions(gameVersion: String): Boolean {
             if (ml.prop("multiloader.enableAdvancedVersionSearch") == "true") {
-                if (mod.mc.contains("$gameVersion.")) {
+                if (mod.mcExact.contains("$gameVersion.")) {
                     return true
                 }
             }
-            return gameVersion == mod.mc
+            return gameVersion == mod.mcExact
         }
 
         json.forEachIndexed { i, _ ->
@@ -84,13 +84,13 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun forge(): String {
-        val mc = mod.mc
+        val mc = mod.mcExact
 
         val jsonString = URL("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json").readText()
         val jsonObject = JSONObject(jsonString)
         val array = jsonObject.getJSONArray(mc)
 
-        return "${mod.mc}-${array.get(array.length()-1).toString().split(mc)[1].substring(1)}"
+        return "${mod.mcExact}-${array.get(array.length()-1).toString().split(mc)[1].substring(1)}"
     }
 
     fun neoForge(): String {
@@ -138,7 +138,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun addToConfig(innerKey: String, value: String) {
-        val versionKey = mod.mc
+        val versionKey = mod.mcExact
         val outerKey = mod.loader
 
         val root: JSONObject = if (file.exists() && file.isFile) {

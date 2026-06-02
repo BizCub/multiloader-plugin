@@ -174,10 +174,10 @@ open class MultiLoader(private val project: Project) {
     val mod = Mod()
     inner class Mod {
         val mc: String get() = scc.version
-        val mcExact: String get() = propIf("version", mod.mc)
+        val mcExact: String get() = propIf("version", mc)
         val loader: String get() = scc.project.substringAfterLast("-")
         val id: String get() = modProp("id")
-        val mixin: String get() = mod.id.replace("_", "-")
+        val mixin: String get() = id.replace("_", "-")
         val name: String get() = modProp("name")
         val description: String get() = modProp("description")
         val version: String get() = modProp("version")
