@@ -26,6 +26,9 @@ class MultiLoaderPlugin : Plugin<Project> {
         project.extensions.create("multiloader", MultiLoader::class.java)
         project.extensions.create("ml", MultiLoader::class.java)
 
+        val version = javaClass.`package`.implementationVersion ?: "unknown"
+        project.logger.lifecycle("Running MultiLoader $version")
+
         runConfigurationMainText = this.javaClass.classLoader.getResource("runConfigurationMain.xml").readText()
         runConfigurationPublishText = this.javaClass.classLoader.getResource("runConfigurationPublish.xml").readText()
     }
@@ -112,40 +115,42 @@ open class MultiLoader(private val project: Project) {
             targetCompatibility = javaVersion
         }
 
-        project.extensions.configure<ModPublishExtension>("publishMods") {
-            fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
-            displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
-            changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
-            version.set(project.version.toString())
-            val releaseType = if (mod.version.contains("-beta.")) BETA
-            else if (mod.version.contains("-alpha.")) ALPHA
-            else STABLE
-            type.set(releaseType)
-            modLoaders.add(mod.loader)
-            if (isFabric) modLoaders.add("quilt")
+        if (getProp("version") == null) {
+            project.extensions.configure<ModPublishExtension>("publishMods") {
+                fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
+                displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
+                changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
+                version.set(project.version.toString())
+                val releaseType = if (mod.version.contains("-beta.")) BETA
+                else if (mod.version.contains("-alpha.")) ALPHA
+                else STABLE
+                type.set(releaseType)
+                modLoaders.add(mod.loader)
+                if (isFabric) modLoaders.add("quilt")
 
-            modrinth {
-                projectId.set(mod.modrinth)
-                accessToken.set(tokenDir("modrinth"))
-                minecraftVersionRange {
-                    start.set(pubStart)
-                    end.set(pubEnd)
-                    includeSnapshots.set(true)
+                modrinth {
+                    projectId.set(mod.modrinth)
+                    accessToken.set(tokenDir("modrinth"))
+                    minecraftVersionRange {
+                        start.set(pubStart)
+                        end.set(pubEnd)
+                        includeSnapshots.set(true)
+                    }
                 }
-            }
-            curseforge {
-                projectId.set(mod.curseforge)
-                accessToken.set(tokenDir("curseforge"))
-                minecraftVersionRange {
-                    start.set(pubStart)
-                    end.set(pubEnd)
+                curseforge {
+                    projectId.set(mod.curseforge)
+                    accessToken.set(tokenDir("curseforge"))
+                    minecraftVersionRange {
+                        start.set(pubStart)
+                        end.set(pubEnd)
+                    }
                 }
-            }
-            github {
-                accessToken.set(tokenDir("github"))
-                repository.set("BizCub/${mod.github}")
-                commitish.set("master")
-                tagName.set("v${project.version}")
+                github {
+                    accessToken.set(tokenDir("github"))
+                    repository.set("BizCub/${mod.github}")
+                    commitish.set("master")
+                    tagName.set("v${project.version}")
+                }
             }
         }
 

@@ -4,7 +4,13 @@ plugins {
 }
 
 group = "com.bizcub"
-version = "0.0.4"
+version = "0.0.5"
+
+tasks.jar {
+    manifest {
+        attributes["Implementation-Version"] = project.version
+    }
+}
 
 repositories {
     mavenCentral()
