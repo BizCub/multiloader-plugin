@@ -19,6 +19,7 @@ fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 
 var runConfigurationMainText = ""
 var runConfigurationPublishText = ""
+var packMcmetaText = ""
 var javaSCNumber = 0
 
 class MultiLoaderPlugin : Plugin<Project> {
@@ -29,8 +30,13 @@ class MultiLoaderPlugin : Plugin<Project> {
         val version = javaClass.`package`.implementationVersion ?: "unknown"
         project.logger.lifecycle("Running MultiLoader $version")
 
-        runConfigurationMainText = this.javaClass.classLoader.getResource("runConfigurationMain.xml").readText()
-        runConfigurationPublishText = this.javaClass.classLoader.getResource("runConfigurationPublish.xml").readText()
+        runConfigurationMainText = getResource("runConfigurationMain.xml")
+        runConfigurationPublishText = getResource("runConfigurationPublish.xml")
+        packMcmetaText = getResource("pack.mcmeta")
+    }
+
+    fun getResource(resource: String): String {
+        return this.javaClass.classLoader.getResource(resource).readText()
     }
 }
 
@@ -89,7 +95,7 @@ open class MultiLoader(private val project: Project) {
             properties(
                 listOf("fabric.mod.json", "META-INF/*.toml"),
                 "ModMenu"       to $$"$ModMenu",
-                "Server"       to $$"$Server",
+                "Server"        to $$"$Server",
                 "id"            to mod.id,
                 "mixin"         to mod.mixin,
                 "name"          to mod.name,
@@ -162,6 +168,14 @@ open class MultiLoader(private val project: Project) {
         if (isNeoForge) addDependency("maven.neoforged.net/releases")
 
         createRunConfiguration()
+
+        val buildPathString = if (!isForge) "build/resources/main" else "build/sourceSets/main"
+        val buildPath = project.projectDir.resolve(buildPathString)
+        val packFile = buildPath.resolve("pack.mcmeta")
+        buildPath.mkdirs()
+
+        if (!packFile.exists()) packFile.createNewFile()
+        packFile.writeText(packMcmetaText)
     }
 
     fun access() {
