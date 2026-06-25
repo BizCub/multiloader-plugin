@@ -19,18 +19,20 @@ import java.io.File
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 
-var runConfigurationMainText = ""
-var runConfigurationPublishText = ""
-var packMcmetaText = ""
-var javaSCNumber = 0
+private var runConfigurationMainText = ""
+private var runConfigurationPublishText = ""
+private var packMcmetaText = ""
+private var javaSCNumber = 0
 
 class MultiLoaderPlugin : Plugin<Project> {
     override fun apply(project: Project) {
-        project.extensions.create("multiloader", MultiLoader::class.java)
+        val multiloader = project.extensions.create("multiloader", MultiLoader::class.java)
         project.extensions.create("ml", MultiLoader::class.java)
 
         val version = javaClass.`package`.implementationVersion ?: "unknown"
         project.logger.lifecycle("Running MultiLoader $version")
+
+        if (project.name != project.rootProject.name) multiloader.init()
 
         runConfigurationMainText = getResource("runConfigurationMain.xml")
         runConfigurationPublishText = getResource("runConfigurationPublish.xml")
@@ -168,8 +170,8 @@ open class MultiLoader(private val project: Project) {
             setProp("cloth-config", "17.0.144")
         }
 
-        addDependency("api.modrinth.com/maven")
-        if (isNeoForge) addDependency("maven.neoforged.net/releases")
+        addDependency(repository = "api.modrinth.com/maven")
+        if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
 
         if (isNeoForge) {
             // This whole thing prevents neoforge from frying your computer by recompiling Minecraft on multiple versions
@@ -183,6 +185,7 @@ open class MultiLoader(private val project: Project) {
         }
 
         createRunConfiguration()
+        access()
 
         val buildPathString = if (!isForge) "build/resources/main" else "build/sourceSets/main"
         val buildPath = project.projectDir.resolve(buildPathString)
@@ -193,7 +196,7 @@ open class MultiLoader(private val project: Project) {
         packFile.writeText(packMcmetaText)
     }
 
-    fun access() {
+    private fun access() {
         val ft = project.extensions.getByType<FletchingTableExtension>()
 
         ft.accessConverter.register("main") {
@@ -223,9 +226,9 @@ open class MultiLoader(private val project: Project) {
         val javaNumber: Int get() = javaSCNumber
     }
 
-    val updateDependencies = UpdateDependencies(project, this)
+    private val updateDependencies = UpdateDependencies(project, this)
 
-    fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
+    private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
         project.extensions.configure<ModPublishExtension>("publishMods") {
             modrinth {
                 when (requirement) {
@@ -244,45 +247,51 @@ open class MultiLoader(private val project: Project) {
 
     val reps = mutableListOf<Repository>()
     val deps = mutableListOf<Dependency>()
+    val modules = mutableListOf<Module>()
 
     class Repository(val repository: String)
     class Dependency(val configuration: String, val dependency: String) {
         val id = dependency.split(":")[1]
         val modConfiguration = "mod${configuration.upperCaseFirst()}"
     }
+    class Module(val module: String)
 
-    fun addDependency(repository: String) {
-        reps.add(Repository("https://$repository"))
+    fun addDependency(
+        repository: String = "",
+        configuration: String = "implementation",
+        dependency: String = "",
+        excludedModules: List<String> = listOf(),
+        isPublishDepEnabled: Boolean = false,
+        publishProjectId: String = "",
+        publishRequirement: String = "optional"
+    ) {
+        if (repository.isNotEmpty()) {
+            reps.add(Repository("https://$repository"))
+        }
+        if (dependency.isNotEmpty()) {
+            deps.add(Dependency(configuration, dependency))
+        }
+        if (isPublishDepEnabled) {
+            addPublishDep(publishRequirement, publishProjectId.ifEmpty { deps[deps.size - 1].id })
+        }
+        excludedModules.forEach { module -> modules.add(Module(module)) }
     }
 
-    fun addDependency(configuration: String, dependency: String) {
-        deps.add(Dependency(configuration, dependency))
-    }
+    val isFabric: Boolean get() = mod.loader == "fabric"
+    val isForge: Boolean get() = mod.loader == "forge"
+    val isNeoForge: Boolean get() = mod.loader == "neoforge"
+    val isObfuscated: Boolean get() = scp < "26.1"
 
-    fun addDependency(repository: String, configuration: String, dependency: String) {
-        reps.add(Repository("https://$repository"))
-        deps.add(Dependency(configuration, dependency))
-    }
+    val isClothConfigAvailable: Boolean get() = !(isForge && scp > "1.21.3")
+    val isAppleSkinAvailable: Boolean get() = !(isForge && scp > "1.20.4")
 
-    val clientRunPath: String get() = "../../run/client"
-    val serverRunPath: String get() = "../../run/server"
-    val clientRunFile: File get() = project.file(clientRunPath)
-    val serverRunFile: File get() = project.file(serverRunPath)
-    val scriptPath: String get() = "../../mod.gradle.kts"
-
+    val clientRunFile: File get() = project.file("../../run/client")
+    val serverRunFile: File get() = project.file("../../run/server")
     val ctFabricPath: String get() = "src/main/resources/${mod.mixin}.ct"
     val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
     val ctForgeArchPath: String get() = "build/generated/stonecutter/main/resources/${mod.mixin}.ct"
     val atForgePath: String get() = "build/sourceSets/main/META-INF/accesstransformer.cfg"
     val atNeoForgePath: String get() = "build/resources/main/META-INF/accesstransformer.cfg"
-
-    val isFabric: Boolean get() = mod.loader == "fabric"
-    val isForge: Boolean get() = mod.loader == "forge"
-    val isNeoForge: Boolean get() = mod.loader == "neoforge"
-
-    val isObfuscated: Boolean get() = scp < "26.1"
-    val isClothConfigAvailable: Boolean get() = !(isForge && scp > "1.21.3")
-    val isAppleSkinAvailable: Boolean get() = !(isForge && scp > "1.20.4")
 
     fun prop(key: String): String? = project.findProperty(key)?.toString()
     fun modProp(key: String) = prop("mod.$key") as String
@@ -293,9 +302,9 @@ open class MultiLoader(private val project: Project) {
     fun versionProp(key: String) = "${mod.mc}.$key"
     fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
 
-    val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
+    private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
 
-    fun getMinCompatVersion(version: String): String {
+    private fun getMinCompatVersion(version: String): String {
         fun checkVersion(version: String): String {
             return if (sc.eval(version, ">=26.1")) {
                 if (version.count { it == '.' } >= 2) {
@@ -326,7 +335,7 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    fun getPublishVersion(version: String): List<String> {
+    private fun getPublishVersion(version: String): List<String> {
 
         fun calculate(version: String): List<String> {
             fun add(int: Int): Int {
@@ -385,7 +394,7 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    val mainTasks = listOf(
+    private val mainTasks = listOf(
         Pair("0 Run Client", "runActiveClient"),
         Pair("0 Run Server", "runActiveServer"),
         Pair("1 Build Active", "buildActive"),
@@ -396,9 +405,9 @@ open class MultiLoader(private val project: Project) {
         Pair("2 Publish GitHub", "PublishGithub"),
         Pair("3 Generation Source", "genSource")
     )
-    val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
+    private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
 
-    fun createRunConfiguration() {
+    private fun createRunConfiguration() {
         val filePath = project.rootDir.resolve(".idea/runConfigurations")
         filePath.mkdirs()
 
