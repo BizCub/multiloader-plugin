@@ -8,6 +8,8 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.services.BuildService
+import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.jvm.tasks.Jar
 import org.gradle.kotlin.dsl.*
@@ -41,6 +43,8 @@ class MultiLoaderPlugin : Plugin<Project> {
 }
 
 open class MultiLoader(private val project: Project) {
+    interface NeoForgeMutex : BuildService<BuildServiceParameters.None>
+
     fun init() {
         project.extra["loom.platform"] = mod.loader
         if (isObfuscated) project.extra["fabric.loom.disableObfuscation"] = false
@@ -167,6 +171,17 @@ open class MultiLoader(private val project: Project) {
         addDependency("api.modrinth.com/maven")
         if (isNeoForge) addDependency("maven.neoforged.net/releases")
 
+        if (isNeoForge) {
+            // This whole thing prevents neoforge from frying your computer by recompiling Minecraft on multiple versions
+            val mutex = project.gradle.sharedServices.registerIfAbsent("createMinecraftArtifactsMutex", NeoForgeMutex::class.java) {
+                maxParallelUsages.set(1)
+            }
+
+            project.tasks.named { it == "createMinecraftArtifacts" }.configureEach {
+                usesService(mutex)
+            }
+        }
+
         createRunConfiguration()
 
         val buildPathString = if (!isForge) "build/resources/main" else "build/sourceSets/main"
@@ -251,6 +266,8 @@ open class MultiLoader(private val project: Project) {
 
     val clientRunPath: String get() = "../../run/client"
     val serverRunPath: String get() = "../../run/server"
+    val clientRunFile: File get() = project.file(clientRunPath)
+    val serverRunFile: File get() = project.file(serverRunPath)
     val scriptPath: String get() = "../../mod.gradle.kts"
 
     val ctFabricPath: String get() = "src/main/resources/${mod.mixin}.ct"
