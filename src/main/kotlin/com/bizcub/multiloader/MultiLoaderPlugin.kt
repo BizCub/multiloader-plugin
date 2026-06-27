@@ -83,35 +83,43 @@ open class MultiLoader(private val project: Project) {
                 register("runActiveClient") { dependsOn(named("runClient")) }
                 register("runActiveServer") { dependsOn(named("runServer")) }
             }
-        }
-
-        project.tasks.named<Jar>("jar") {
-            manifest {
-                attributes["MixinConfigs"] = "${mod.mixin}.mixins.json"
-            }
-        }
-
-        project.tasks.withType<ProcessResources> {
-            fun properties(files: Iterable<String>, vararg properties: Pair<String, Any>) {
-                for ((name, value) in properties) inputs.property(name, value)
-                filesMatching(files) {
-                    expand(properties.toMap())
+            named<Jar>("jar") {
+                manifest {
+                    attributes["MixinConfigs"] = "${mod.mixin}.mixins.json"
                 }
             }
-            properties(
-                listOf("fabric.mod.json", "META-INF/*.toml"),
-                "ModMenu"       to $$"$ModMenu",
-                "Server"        to $$"$Server",
-                "id"            to mod.id,
-                "mixin"         to mod.mixin,
-                "name"          to mod.name,
-                "description"   to mod.description,
-                "version"       to project.version,
-                "modrinth"      to mod.modrinth,
-                "github"        to mod.github,
-                "author"        to "Bizarre Cube",
-                "license"       to "MIT"
-            )
+            withType<ProcessResources> {
+                fun properties(files: Iterable<String>, vararg properties: Pair<String, Any>) {
+                    for ((name, value) in properties) inputs.property(name, value)
+                    filesMatching(files) {
+                        expand(properties.toMap())
+                    }
+                }
+                properties(
+                    listOf("fabric.mod.json", "META-INF/*.toml"),
+                    "ModMenu"       to $$"$ModMenu",
+                    "Server"        to $$"$Server",
+                    "id"            to mod.id,
+                    "mixin"         to mod.mixin,
+                    "name"          to mod.name,
+                    "description"   to mod.description,
+                    "version"       to project.version,
+                    "modrinth"      to mod.modrinth,
+                    "github"        to mod.github,
+                    "author"        to "Bizarre Cube",
+                    "license"       to "MIT"
+                )
+            }
+        }
+
+        serverRunFile.mkdirs()
+        val eulaFile = serverRunFile.resolve("eula.txt")
+        val propertiesFile = serverRunFile.resolve("server.properties")
+        eulaFile.createNewFile()
+        eulaFile.writeText("eula=true")
+        if (!propertiesFile.exists()) {
+            propertiesFile.createNewFile()
+            propertiesFile.writeText("online-mode=false")
         }
 
         project.configure<JavaPluginExtension> {
