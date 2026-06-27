@@ -247,7 +247,7 @@ open class MultiLoader(private val project: Project) {
 
     val reps = mutableListOf<Repository>()
     val deps = mutableListOf<Dependency>()
-    val modules = mutableListOf<Module>()
+    val eModules = mutableListOf<Module>()
 
     class Repository(val repository: String)
     class Dependency(val configuration: String, val dependency: String) {
@@ -274,7 +274,7 @@ open class MultiLoader(private val project: Project) {
         if (isPublishDepEnabled) {
             addPublishDep(publishRequirement, publishProjectId.ifEmpty { deps[deps.size - 1].id })
         }
-        excludedModules.forEach { module -> modules.add(Module(module)) }
+        excludedModules.forEach { module -> eModules.add(Module(module)) }
     }
 
     val isFabric: Boolean get() = mod.loader == "fabric"
