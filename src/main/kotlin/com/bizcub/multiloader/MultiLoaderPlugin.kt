@@ -22,6 +22,8 @@ fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 private var runConfigurationMainText = ""
 private var runConfigurationPublishText = ""
 private var packMcmetaText = ""
+private var bugReportText = ""
+private var newFeatureText = ""
 private var javaSCNumber = 0
 
 class MultiLoaderPlugin : Plugin<Project> {
@@ -37,6 +39,8 @@ class MultiLoaderPlugin : Plugin<Project> {
         runConfigurationMainText = getResource("runConfigurationMain.xml")
         runConfigurationPublishText = getResource("runConfigurationPublish.xml")
         packMcmetaText = getResource("pack.mcmeta")
+        bugReportText = getResource("bug-report.yml")
+        newFeatureText = getResource("new-feature.yml")
     }
 
     fun getResource(resource: String): String {
@@ -195,13 +199,17 @@ open class MultiLoader(private val project: Project) {
         createRunConfiguration()
         access()
 
-        val buildPathString = "build/resources/main"
-        val buildPath = project.projectDir.resolve(buildPathString)
+        val buildPath = project.projectDir.resolve("build/resources/main")
         val packFile = buildPath.resolve("pack.mcmeta")
         buildPath.mkdirs()
-
-        if (!packFile.exists()) packFile.createNewFile()
         packFile.writeText(packMcmetaText)
+
+        val issueTemplatesDir = project.rootDir.resolve(".github/ISSUE_TEMPLATE")
+        issueTemplatesDir.mkdirs()
+        val bugReportFile = issueTemplatesDir.resolve("bug-report.yml")
+        bugReportFile.writeText(bugReportText)
+        val newFeatureFile = issueTemplatesDir.resolve("new-feature.yml")
+        newFeatureFile.writeText(newFeatureText)
     }
 
     private fun access() {
@@ -410,8 +418,7 @@ open class MultiLoader(private val project: Project) {
         Pair("2 Publish Mods", "PublishMods"),
         Pair("2 Publish Modrinth", "PublishModrinth"),
         Pair("2 Publish CurseForge", "PublishCurseforge"),
-        Pair("2 Publish GitHub", "PublishGithub"),
-        Pair("3 Generation Source", "genSource")
+        Pair("2 Publish GitHub", "PublishGithub")
     )
     private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
 
