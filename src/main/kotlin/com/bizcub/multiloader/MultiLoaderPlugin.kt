@@ -199,7 +199,7 @@ open class MultiLoader(private val project: Project) {
         createRunConfiguration()
         access()
 
-        val buildPath = project.projectDir.resolve("build/resources/main")
+        val buildPath = project.projectDir.resolve(if (!isForge) "build/resources/main" else "build/sourceSets/main")
         val packFile = buildPath.resolve("pack.mcmeta")
         buildPath.mkdirs()
         packFile.writeText(packMcmetaText)
