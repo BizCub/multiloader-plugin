@@ -170,24 +170,7 @@ open class MultiLoader(private val project: Project) {
         return dep
     }
 
-    private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
-        project.extensions.configure<ModPublishExtension>("publishMods") {
-            modrinth {
-                when (requirement) {
-                    "requires" -> requires(mrSlug)
-                    "optional" -> optional(mrSlug)
-                }
-            }
-            curseforge {
-                when (requirement) {
-                    "requires" -> requires(cfSlug)
-                    "optional" -> optional(cfSlug)
-                }
-            }
-        }
-    }
-
-    private fun getMinCompatVersion(version: String): String {
+    fun getMinCompatVersion(version: String): String {
         fun checkVersion(version: String): String {
             return if (sc.eval(version, ">=26.1")) {
                 if (version.count { it == '.' } >= 2) {
@@ -213,6 +196,23 @@ open class MultiLoader(private val project: Project) {
                     return tempVersion
                 } else {
                     tempVersion = checkVersion(tempVersion)
+                }
+            }
+        }
+    }
+
+    private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
+        project.extensions.configure<ModPublishExtension>("publishMods") {
+            modrinth {
+                when (requirement) {
+                    "requires" -> requires(mrSlug)
+                    "optional" -> optional(mrSlug)
+                }
+            }
+            curseforge {
+                when (requirement) {
+                    "requires" -> requires(cfSlug)
+                    "optional" -> optional(cfSlug)
                 }
             }
         }
