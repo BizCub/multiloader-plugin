@@ -59,8 +59,8 @@ open class MultiLoader(private val project: Project) {
             pubEnd = propIf("pub-end", publishVersionList.last())
         }
 
-        configureModPublication(pubStart, pubEnd)
         configureGradle(pubStart)
+        configureModPublication(pubStart, pubEnd)
 
         addDependency(repository = "api.modrinth.com/maven")
         if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
