@@ -4,6 +4,7 @@ import dev.kikugie.fletching_table.extension.FletchingTableExtension
 import dev.kikugie.stonecutter.build.StonecutterBuildExtension
 import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
 import me.modmuss50.mpp.ModPublishExtension
+import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -137,14 +138,53 @@ open class MultiLoader(private val project: Project) {
         Pair("2 Publish GitHub", "PublishGithub")
     )
 
+    val mrEnvs = MREnvs()
+    class MREnvs {
+        val clientOnly = ModrinthEnvironment.CLIENT_ONLY
+        val serverOnly = ModrinthEnvironment.SERVER_ONLY
+        val dedicatedServerOnly = ModrinthEnvironment.DEDICATED_SERVER_ONLY
+        val clientAndServer = ModrinthEnvironment.CLIENT_AND_SERVER
+        val serverOnlyClientOptional = ModrinthEnvironment.SERVER_ONLY_CLIENT_OPTIONAL
+        val clientOnlyServerOptional = ModrinthEnvironment.CLIENT_ONLY_SERVER_OPTIONAL
+        val clientOrServerPrefersBoth = ModrinthEnvironment.CLIENT_OR_SERVER_PREFERS_BOTH
+        val clientOrServer = ModrinthEnvironment.CLIENT_OR_SERVER
+        val singleplayerOnly = ModrinthEnvironment.SINGLEPLAYER_ONLY
+    }
+
+    val cfEnvs = CFEnvs()
+    class CFEnvs {
+        val client = "client"
+        val server = "server"
+        val both = "both"
+    }
+
+    fun publishMods(block: ModPublishExtension.() -> Unit) {
+        project.extensions.configure<ModPublishExtension>("publishMods", block)
+    }
+
+    fun setMREnvironment(mrEnv: ModrinthEnvironment) = publishMods {
+        modrinth { environment.set(mrEnv) }
+    }
+
+    fun setMREnvironment(mrEnv: String) = publishMods {
+        modrinth { environment.set(ModrinthEnvironment.valueOf(mrEnv)) }
+    }
+
+    fun setCFEnvironment(cfEnv: String) = publishMods {
+        curseforge {
+            client.set(cfEnv == cfEnvs.client || cfEnv == cfEnvs.both)
+            server.set(cfEnv == cfEnvs.server || cfEnv == cfEnvs.both)
+        }
+    }
+
     fun addDependency(
         repository: String = "",
         configuration: String = "implementation",
         dependency: String = "",
         excludedModules: List<String> = listOf(),
         isPublishDepEnabled: Boolean = false,
-        publishProjectId: String = "",
-        publishRequirement: String = "optional"
+        isPublishDepRequired: Boolean = false,
+        publishProjectId: String = ""
     ) {
         if (repository.isNotEmpty()) {
             reps.add(Repository("https://$repository"))
@@ -153,7 +193,10 @@ open class MultiLoader(private val project: Project) {
             deps.add(Dependency(configuration, dependency))
         }
         if (isPublishDepEnabled) {
-            addPublishDep(publishRequirement, publishProjectId.ifEmpty { deps[deps.size - 1].id })
+            addPublishDep(
+                if (isPublishDepRequired) "requires" else "optional",
+                publishProjectId.ifEmpty { deps[deps.size - 1].id }
+            )
         }
         excludedModules.forEach { module -> eModules.add(Module(module)) }
     }
