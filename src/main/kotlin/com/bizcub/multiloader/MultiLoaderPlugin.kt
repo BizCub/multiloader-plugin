@@ -8,20 +8,22 @@ import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.file.RegularFile
 import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
+import org.gradle.api.provider.Provider
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
+import org.gradle.api.tasks.JavaExec
 import org.gradle.jvm.tasks.Jar
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.File
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
-
-private var javaSCNumber = 0
 
 class MultiLoaderPlugin : Plugin<Project> {
     override fun apply(project: Project) {
@@ -30,113 +32,26 @@ class MultiLoaderPlugin : Plugin<Project> {
         val version = javaClass.`package`.implementationVersion ?: "unknown"
         project.logger.lifecycle("Running MultiLoader $version")
 
-        if (project.name == project.rootProject.name) multiloader.firstInit()
-        if (project.name != project.rootProject.name) multiloader.init()
+        val isNameSameAsRootProject = project.name == project.rootProject.name
+        if (isNameSameAsRootProject) multiloader.firstInit()
+        if (!isNameSameAsRootProject) multiloader.init()
     }
 }
 
 open class MultiLoader(private val project: Project) {
-    fun firstInit() {
-        createDepFile()
-        setCustomProjectIcon()
-        setStonecutterParameters()
-    }
-
-    fun init() {
-        setServerProperties()
-        neoforgeFix()
-        createRunConfiguration()
-        access()
-        setProperties()
-        updateOrCreateIssueTemplates()
-        generatePackMetadata()
-
-        var pubStart = mod.pubStart
-        var pubEnd = mod.pubEnd
-
-        if (prop("multiloader.editPublishVersions") == "true") {
-            val publishVersionList = getPublishVersion(mod.mc)
-            pubStart = propIf("pub-start", publishVersionList.first())
-            pubEnd = propIf("pub-end", publishVersionList.last())
-        }
-
-        configureGradle(pubStart)
-        configureModPublication(pubStart, pubEnd)
-
-        addDependency(repository = "api.modrinth.com/maven")
-        if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
-    }
-
-    val sc get() = project.extensions.getByType<StonecutterBuildExtension>()
-    val scc get() = sc.current
-    val scp get() = scc.parsed
-
-    val mod = Mod()
-    inner class Mod {
-        val mc: String get() = scc.version
-        val mcExact: String get() = propIf("version", mc)
-        val loader: String get() = scc.project.substringAfterLast("-")
-        val id: String get() = modProp("id")
-        val mixin: String get() = id.replace("_", "-")
-        val name: String get() = modProp("name")
-        val description: String get() = modProp("description")
-        val version: String get() = modProp("version")
-        val modrinth: String get() = modProp("modrinth")
-        val curseforge: String get() = modProp("curseforge")
-        val github: String get() = modProp("github")
-        val pubStart: String get() = propIf("pub-start", mc)
-        val pubEnd: String get() = propIf("pub-end", mc)
-        val javaNumber: Int get() = javaSCNumber
-    }
-
-    val reps = mutableListOf<Repository>()
-    val deps = mutableListOf<Dependency>()
-    val eModules = mutableListOf<Module>()
-
     interface NeoForgeMutex : BuildService<BuildServiceParameters.None>
 
+    val reps = mutableListOf<Repository>()
     class Repository(val repository: String)
+
+    val deps = mutableListOf<Dependency>()
     class Dependency(val configuration: String, val dependency: String) {
         val id = dependency.split(":")[1]
         val modConfiguration = "mod${configuration.upperCaseFirst()}"
     }
+
+    val eModules = mutableListOf<Module>()
     class Module(val module: String)
-
-    val isFabric: Boolean get() = mod.loader == "fabric"
-    val isForge: Boolean get() = mod.loader == "forge"
-    val isNeoForge: Boolean get() = mod.loader == "neoforge"
-    val isObfuscated: Boolean get() = scp < "26.1"
-
-    val clientRunFile: File get() = project.file("../../run/client")
-    val serverRunFile: File get() = project.file("../../run/server")
-    val ctFabricPath: String get() = "src/main/resources/${mod.mixin}.ct"
-    val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
-    val ctForgeArchPath: String get() = "build/generated/stonecutter/main/resources/${mod.mixin}.ct"
-    val atForgePath: String get() = "build/sourceSets/main/META-INF/accesstransformer.cfg"
-    val atNeoForgePath: String get() = "build/resources/main/META-INF/accesstransformer.cfg"
-
-    fun prop(key: String): String? = project.findProperty(key)?.toString()
-    fun modProp(key: String) = prop("mod.$key") as String
-    fun getProp(key: String) = prop(propName(key))
-    fun setProp(key: String, value: Any?) = value.also { project.extra[versionExactlyProp(key)] = it }
-    fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
-    fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
-    fun versionProp(key: String) = "${mod.mc}.$key"
-    fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
-
-    private val updateDependencies = UpdateDependencies(project, this)
-    private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
-    private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
-    private val mainTasks = listOf(
-        Pair("0 Run Client", "runActiveClient"),
-        Pair("0 Run Server", "runActiveServer"),
-        Pair("1 Build Active", "buildActive"),
-        Pair("1 Build All", "buildAndCollect"),
-        Pair("2 Publish Mods", "PublishMods"),
-        Pair("2 Publish Modrinth", "PublishModrinth"),
-        Pair("2 Publish CurseForge", "PublishCurseforge"),
-        Pair("2 Publish GitHub", "PublishGithub")
-    )
 
     val mrEnvs = MREnvs()
     class MREnvs {
@@ -158,8 +73,113 @@ open class MultiLoader(private val project: Project) {
         val both = "both"
     }
 
-    fun publishMods(block: ModPublishExtension.() -> Unit) {
-        project.extensions.configure<ModPublishExtension>("publishMods", block)
+    val mod = Mod()
+    inner class Mod {
+        val mc: String get() = scc.version
+        val mcExact: String get() = propIf("version", mc)
+        val loader: String get() = scc.project.substringAfterLast("-")
+        val id: String get() = modProp("id")
+        val mixin: String get() = id.replace("_", "-")
+        val name: String get() = modProp("name")
+        val description: String get() = modProp("description")
+        val version: String get() = modProp("version")
+        val modrinth: String get() = modProp("modrinth")
+        val curseforge: String get() = modProp("curseforge")
+        val github: String get() = modProp("github")
+        val pubStart: String get() = propIf("pub-start", mc)
+        val pubEnd: String get() = propIf("pub-end", mc)
+    }
+
+    private var isArchitectury = false
+
+    private val updateDependencies = UpdateDependencies(project, this)
+    private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
+    private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
+    private val mainTasks = listOf(
+        Pair("0 Run Client", "runActiveClient"),
+        Pair("0 Run Server", "runActiveServer"),
+        Pair("1 Build Active", "buildActive"),
+        Pair("1 Build All", "buildAndCollect"),
+        Pair("2 Publish Mods", "PublishMods"),
+        Pair("2 Publish Modrinth", "PublishModrinth"),
+        Pair("2 Publish CurseForge", "PublishCurseforge"),
+        Pair("2 Publish GitHub", "PublishGithub")
+    )
+
+    val sc get() = project.extensions.getByType<StonecutterBuildExtension>()
+    val scc get() = sc.current
+    val scp get() = scc.parsed
+
+    val isFabric: Boolean get() = mod.loader == "fabric"
+    val isForge: Boolean get() = mod.loader == "forge"
+    val isNeoForge: Boolean get() = mod.loader == "neoforge"
+    val isObfuscated: Boolean get() = scp < "26.1"
+
+    val clientRunFile: File get() = project.file("../../run/client")
+    val serverRunFile: File get() = project.file("../../run/server")
+    val mixinFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.mixins.json")
+    val ctFabricFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.ct")
+    val ctForgeArchFile: File get() = project.file("build/generated/stonecutter/main/resources/${mod.mixin}.ct")
+    val atForgeFile: File get() = project.file("build/sourceSets/main/META-INF/accesstransformer.cfg")
+    val atNeoForgeFile: File get() = project.file("build/resources/main/META-INF/accesstransformer.cfg")
+    val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
+
+    fun prop(key: String): String? = project.findProperty(key)?.toString()
+    fun modProp(key: String) = prop("mod.$key") as String
+    fun getProp(key: String) = prop(propName(key))
+    fun setProp(key: String, value: Any?) = value.also { project.extra[versionExactlyProp(key)] = it }
+    fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
+    fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
+    fun versionProp(key: String) = "${mod.mc}.$key"
+    fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
+
+    fun firstInit() {
+        createDepFile()
+        setCustomProjectIcon()
+        setStonecutterParameters()
+    }
+
+    fun init() {
+        setServerProperties()
+        neoforgeFix()
+        createRunConfiguration()
+        access()
+        setProperties()
+        updateOrCreateIssueTemplates()
+
+        var pubStart = mod.pubStart
+        var pubEnd = mod.pubEnd
+
+        if (prop("multiloader.editPublishVersions") == "true") {
+            val publishVersionList = getPublishVersion(mod.mc)
+            pubStart = propIf("pub-start", publishVersionList.first())
+            pubEnd = propIf("pub-end", publishVersionList.last())
+        }
+
+        configureGradle(pubStart)
+        configureModPublication(pubStart, pubEnd)
+
+        addDependency(repository = "api.modrinth.com/maven")
+        if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
+
+        project.afterEvaluate {
+            afterEvaluate()
+        }
+    }
+
+    private fun afterEvaluate() {
+        generatePackMetadata()
+        configureTasks()
+    }
+
+    fun setBuiltFile(builtFile: Provider<RegularFile>) {
+        publishMods {
+            file.set(builtFile)
+        }
+
+        project.tasks.named<Copy>("buildAndCollect") {
+            from(builtFile)
+        }
     }
 
     fun setMREnvironment(mrEnv: ModrinthEnvironment) = publishMods {
@@ -175,6 +195,10 @@ open class MultiLoader(private val project: Project) {
             client.set(cfEnv == cfEnvs.client || cfEnv == cfEnvs.both)
             server.set(cfEnv == cfEnvs.server || cfEnv == cfEnvs.both)
         }
+    }
+
+    fun architectury() {
+        isArchitectury = true
     }
 
     fun addDependency(
@@ -242,6 +266,10 @@ open class MultiLoader(private val project: Project) {
                 }
             }
         }
+    }
+
+    private fun publishMods(block: ModPublishExtension.() -> Unit) {
+        project.extensions.configure<ModPublishExtension>("publishMods", block)
     }
 
     private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
@@ -456,7 +484,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun generatePackMetadata() {
-        val buildPath = project.projectDir.resolve(if (!isForge) "build/resources/main" else "build/sourceSets/main")
+        val buildPath = project.projectDir.resolve(if (!isForge || isArchitectury) "build/resources/main" else "build/sourceSets/main")
         val packFile = buildPath.resolve("pack.mcmeta")
         buildPath.mkdirs()
         packFile.writeText(getResource("pack.mcmeta"))
@@ -488,7 +516,7 @@ open class MultiLoader(private val project: Project) {
             }
             named<Jar>("jar") {
                 manifest {
-                    attributes["MixinConfigs"] = "${mod.mixin}.mixins.json"
+                    attributes["MixinConfigs"] = mixinFile.name
                 }
             }
             withType<ProcessResources> {
@@ -516,7 +544,7 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.configure<JavaPluginExtension> {
-            javaSCNumber = when {
+            val javaSCNumber = when {
                 scp >= "26.1"   -> 25
                 scp >= "1.20.5" -> 21
                 scp >= "1.18"   -> 17
@@ -526,6 +554,7 @@ open class MultiLoader(private val project: Project) {
             val javaVersion = JavaVersion.toVersion(javaSCNumber)
             sourceCompatibility = javaVersion
             targetCompatibility = javaVersion
+            toolchain.languageVersion.set(JavaLanguageVersion.of(javaSCNumber))
         }
     }
 
@@ -540,6 +569,21 @@ open class MultiLoader(private val project: Project) {
                 replacements.string(current.parsed >= "26.1") {
                     replace("classTweaker v1 named", "classTweaker v1 official")
                 }
+            }
+        }
+    }
+
+    private fun configureTasks() {
+        fun configureTask(task1: String, task2: String) {
+            project.tasks.findByName(task1)?.dependsOn(task2)
+        }
+
+        configureTask("validateAccessWidener", "processResources")
+        configureTask("createMinecraftArtifacts", "processResources")
+
+        if (isNeoForge) {
+            project.tasks.named<JavaExec>("runServer") {
+                standardInput = System.`in`
             }
         }
     }
