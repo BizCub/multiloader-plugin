@@ -16,11 +16,16 @@ import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
+import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
+import java.nio.file.Files
+import kotlin.text.replace
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -90,6 +95,8 @@ open class MultiLoader(private val project: Project) {
         val pubEnd: String get() = propIf("pub-end", mc)
     }
 
+    class Entrypoint(val entrypointName: String, val implementedClassName: String, var className: String, var classFile: File)
+
     private var isArchitectury = false
 
     private val updateDependencies = UpdateDependencies(project, this)
@@ -104,6 +111,11 @@ open class MultiLoader(private val project: Project) {
         Pair("2 Publish Modrinth", "PublishModrinth"),
         Pair("2 Publish CurseForge", "PublishCurseforge"),
         Pair("2 Publish GitHub", "PublishGithub")
+    )
+    private val entrypoints = mutableListOf(
+        Entrypoint("client", "net.fabricmc.api.ClientModInitializer", "", File("")),
+        Entrypoint("main", "net.fabricmc.api.ModInitializer", "", File("")),
+        Entrypoint("modmenu", "com.terraformersmc.modmenu.api.ModMenuApi", "", File(""))
     )
 
     val sc get() = project.extensions.getByType<StonecutterBuildExtension>()
@@ -158,6 +170,7 @@ open class MultiLoader(private val project: Project) {
 
         configureGradle(pubStart)
         configureModPublication(pubStart, pubEnd)
+        addTaskToQueue()
 
         addDependency(repository = "api.modrinth.com/maven")
         if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
@@ -199,6 +212,10 @@ open class MultiLoader(private val project: Project) {
 
     fun architectury() {
         isArchitectury = true
+    }
+
+    fun addEntrypoint(entrypointName: String, implementedClassName: String) {
+        entrypoints.add(Entrypoint(entrypointName, implementedClassName, "", File("")))
     }
 
     fun addDependency(
@@ -519,6 +536,11 @@ open class MultiLoader(private val project: Project) {
                     attributes["MixinConfigs"] = mixinFile.name
                 }
             }
+            project.tasks.named("processResources") {
+                doLast {
+                    entrypointRegistration()
+                }
+            }
             withType<ProcessResources> {
                 fun properties(files: Iterable<String>, vararg properties: Pair<String, Any>) {
                     for ((name, value) in properties) inputs.property(name, value)
@@ -533,7 +555,7 @@ open class MultiLoader(private val project: Project) {
                     "id"            to mod.id,
                     "mixin"         to mod.mixin,
                     "name"          to mod.name,
-                    "description"   to mod.description,
+                    "description"   to if (isFabric) mod.description.replace("\n", "\\n") else mod.description,
                     "version"       to project.version,
                     "modrinth"      to mod.modrinth,
                     "github"        to mod.github,
@@ -586,5 +608,53 @@ open class MultiLoader(private val project: Project) {
                 standardInput = System.`in`
             }
         }
+    }
+
+    private fun addTaskToQueue() {
+        val isIdeaSync = System.getProperty("idea.sync.active", "false").toBoolean()
+        if (isIdeaSync) {
+            val sp = project.gradle.startParameter
+            sp.setTaskRequests(
+                sp.taskRequests + DefaultTaskExecutionRequest(
+                    listOf("processResources"),
+                    project.path,
+                    project.projectDir
+                )
+            )
+        }
+    }
+
+    private fun entrypointRegistration() {
+        if (!isFabric) return
+
+        val entrypointPairs = Files.walk(project.rootProject.file("src/main/java").toPath())
+            .filter { Files.isRegularFile(it) }
+            .map { Pair(it.toString().replace("\\", ".").split("src.main.java.")[1].dropLast(5), it.toFile()) }
+            .toList()
+            .toMutableList()
+
+        entrypoints.forEach { entry ->
+            entrypointPairs.forEach { pair ->
+                if (pair.second.readText().contains(entry.implementedClassName)) {
+                    entry.className = pair.first
+                    entry.classFile = pair.second
+                }
+            }
+        }
+
+        entrypoints.removeIf { it.className == "" }
+
+        val jsonFile = project.file("build/resources/main/fabric.mod.json")
+        val jsonString = jsonFile.readText()
+        val json = JSONObject(jsonString)
+        val entrypointsKey = json.optJSONObject("entrypoints") ?: JSONObject().also {
+            json.put("entrypoints", it)
+        }
+
+        entrypoints.forEach { entrypoint ->
+            entrypointsKey.put(entrypoint.entrypointName, JSONArray().put(entrypoint.className))
+        }
+
+        jsonFile.writeText(json.toString(4))
     }
 }
