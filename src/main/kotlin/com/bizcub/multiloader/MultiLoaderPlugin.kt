@@ -20,7 +20,6 @@ import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
-import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -170,6 +169,7 @@ open class MultiLoader(private val project: Project) {
 
         configureGradle(pubStart)
         configureModPublication(pubStart, pubEnd)
+        generateModMetadata()
         addTaskToQueue()
 
         addDependency(repository = "api.modrinth.com/maven")
@@ -181,7 +181,6 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun afterEvaluate() {
-        generatePackMetadata()
         configureTasks()
     }
 
@@ -365,32 +364,6 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private fun createRunConfiguration() {
-        val filePath = project.rootDir.resolve(".idea/runConfigurations")
-        filePath.mkdirs()
-
-        fun createFile(name: String, content: String, replaceName: String, replaceTask: String) {
-            val file = filePath.resolve("$name.xml")
-            file.createNewFile()
-            file.writeText(content
-                .replace("%NAME%", replaceName)
-                .replace("%TASK%", replaceTask)
-            )
-        }
-
-        mainTasks.forEach { (name, task) ->
-            val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
-            createFile(fileName, getResource("runConfigurationMain.xml"), name, task)
-        }
-
-        publishPlatforms.forEach { platform ->
-            val name = "Publish $platform ${mod.mc}"
-            val fileName = name.replace(" ", "")
-            val task = fileName.lowerCaseFirst()
-            createFile(fileName, getResource("runConfigurationPublish.xml"), name, task)
-        }
-    }
-
     private fun createDepFile() {
         updateDependencies.createDepFile()
     }
@@ -489,22 +462,73 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
+    private fun createRunConfiguration() {
+        val filePath = project.rootDir.resolve(".idea/runConfigurations")
+        filePath.mkdirs()
+
+        fun createFile(name: String, content: String, replaceName: String, replaceTask: String) {
+            val file = filePath.resolve("$name.xml")
+            file.createNewFile()
+            file.writeText(content
+                .replace("%NAME%", replaceName)
+                .replace("%TASK%", replaceTask)
+            )
+        }
+
+        mainTasks.forEach { (name, task) ->
+            val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
+            createFile(fileName, getResource("runConfiguration/runConfigurationMain.xml"), name, task)
+        }
+
+        publishPlatforms.forEach { platform ->
+            val name = "Publish $platform ${mod.mc}"
+            val fileName = name.replace(" ", "")
+            val task = fileName.lowerCaseFirst()
+            createFile(fileName, getResource("runConfiguration/runConfigurationPublish.xml"), name, task)
+        }
+    }
+
     private fun updateOrCreateIssueTemplates() {
         val issueTemplatesDir = project.rootDir.resolve(".github/ISSUE_TEMPLATE")
         issueTemplatesDir.mkdirs()
         val bugReportFile = issueTemplatesDir.resolve("bug-report.yml")
-        bugReportFile.writeText(getResource("bug-report.yml"))
+        bugReportFile.writeText(getResource("issueTemplate/bug-report.yml"))
         val newFeatureFile = issueTemplatesDir.resolve("new-feature.yml")
-        newFeatureFile.writeText(getResource("new-feature.yml"))
+        newFeatureFile.writeText(getResource("issueTemplate/new-feature.yml"))
         val issueConfigFile = issueTemplatesDir.resolve("config.yml")
-        issueConfigFile.writeText(getResource("config.yml"))
+        issueConfigFile.writeText(getResource("issueTemplate/config.yml"))
     }
 
-    private fun generatePackMetadata() {
+    private fun generateModMetadata() {
         val buildPath = project.projectDir.resolve(if (!isForge || isArchitectury) "build/resources/main" else "build/sourceSets/main")
-        val packFile = buildPath.resolve("pack.mcmeta")
-        buildPath.mkdirs()
-        packFile.writeText(getResource("pack.mcmeta"))
+        buildPath.resolve("META-INF").mkdirs()
+
+        val changeMap = listOf(
+            "id"            to mod.id,
+            "mixin"         to mod.mixin,
+            "name"          to mod.name,
+            "description"   to if (isFabric) mod.description.replace("\n", "\\n") else mod.description,
+            "version"       to project.version,
+            "modrinth"      to mod.modrinth,
+            "github"        to mod.github,
+            "author"        to "Bizarre Cube",
+            "license"       to "MIT"
+        )
+
+        fun getChangedResource(resource: String): String {
+            var changedResource = getResource(resource)
+            changeMap.forEach { changedResource = changedResource.replace($$"${$${it.first}}", it.second.toString()) }
+            return changedResource
+        }
+
+        fun process(fileName: String, path: String = "") {
+            buildPath.resolve(path).resolve(fileName).writeText(getChangedResource("mod/${fileName}"))
+        }
+
+        process("pack.mcmeta")
+        if (isFabric) process("fabric.mod.json")
+        if (isForge) process("mods.toml", "META-INF")
+        if (isNeoForge) process("neoforge.mods.toml", "META-INF")
     }
 
     private fun configureGradle(pubStart: String) {
@@ -536,32 +560,10 @@ open class MultiLoader(private val project: Project) {
                     attributes["MixinConfigs"] = mixinFile.name
                 }
             }
-            project.tasks.named("processResources") {
+            named("processResources") {
                 doLast {
                     entrypointRegistration()
                 }
-            }
-            withType<ProcessResources> {
-                fun properties(files: Iterable<String>, vararg properties: Pair<String, Any>) {
-                    for ((name, value) in properties) inputs.property(name, value)
-                    filesMatching(files) {
-                        expand(properties.toMap())
-                    }
-                }
-                properties(
-                    listOf("fabric.mod.json", "META-INF/*.toml"),
-                    "ModMenu"       to $$"$ModMenu",
-                    "Server"        to $$"$Server",
-                    "id"            to mod.id,
-                    "mixin"         to mod.mixin,
-                    "name"          to mod.name,
-                    "description"   to if (isFabric) mod.description.replace("\n", "\\n") else mod.description,
-                    "version"       to project.version,
-                    "modrinth"      to mod.modrinth,
-                    "github"        to mod.github,
-                    "author"        to "Bizarre Cube",
-                    "license"       to "MIT"
-                )
             }
         }
 
@@ -625,7 +627,9 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun entrypointRegistration() {
-        if (!isFabric) return
+        val jsonFile = project.file("build/resources/main/fabric.mod.json")
+
+        if (!isFabric || !jsonFile.exists()) return
 
         val entrypointPairs = Files.walk(project.rootProject.file("src/main/java").toPath())
             .filter { Files.isRegularFile(it) }
@@ -644,7 +648,6 @@ open class MultiLoader(private val project: Project) {
 
         entrypoints.removeIf { it.className == "" }
 
-        val jsonFile = project.file("build/resources/main/fabric.mod.json")
         val jsonString = jsonFile.readText()
         val json = JSONObject(jsonString)
         val entrypointsKey = json.optJSONObject("entrypoints") ?: JSONObject().also {

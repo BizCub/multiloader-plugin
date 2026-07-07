@@ -1,6 +1,6 @@
 {
     "pack": {
-        "description": "by Bizarre Cube",
+        "description": "by ${author}",
         "pack_format": 15
     }
 }
