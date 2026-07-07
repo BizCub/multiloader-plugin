@@ -6,6 +6,7 @@ import org.json.JSONObject
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.IOException
+import java.net.HttpURLConnection
 import java.net.URL
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -76,6 +77,23 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             }
         }
         return "not_found"
+    }
+
+    fun getPlayerUUIDbyName(name: String): String {
+        val urlString = "https://api.mojang.com/users/profiles/minecraft/$name"
+
+        val url = URL(urlString)
+        val connection = url.openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+
+        val response = connection.inputStream.bufferedReader().use { it.readText() }
+        connection.disconnect()
+
+        val json = JSONObject(response)
+        val uuidWithoutDashes = json.getString("id")
+        val formatted = uuidWithoutDashes.replace(Regex("(\\w{8})(\\w{4})(\\w{4})(\\w{4})(\\w{12})"), "$1-$2-$3-$4-$5")
+
+        return formatted
     }
 
     fun fabric(): String {

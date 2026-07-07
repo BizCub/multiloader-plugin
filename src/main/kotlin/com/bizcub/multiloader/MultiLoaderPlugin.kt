@@ -8,6 +8,7 @@ import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
 import org.gradle.api.Project
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.RegularFile
 import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
@@ -16,10 +17,12 @@ import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -96,8 +99,6 @@ open class MultiLoader(private val project: Project) {
 
     class Entrypoint(val entrypointName: String, val implementedClassName: String, var className: String, var classFile: File)
 
-    private var isArchitectury = false
-
     private val updateDependencies = UpdateDependencies(project, this)
     private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
     private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
@@ -134,6 +135,9 @@ open class MultiLoader(private val project: Project) {
     val atForgeFile: File get() = project.file("build/sourceSets/main/META-INF/accesstransformer.cfg")
     val atNeoForgeFile: File get() = project.file("build/resources/main/META-INF/accesstransformer.cfg")
     val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
+
+    val playerName: String get() = "BizarreCube"
+    val playerUUID: String get() = updateDependencies.getPlayerUUIDbyName(playerName)
 
     fun prop(key: String): String? = project.findProperty(key)?.toString()
     fun modProp(key: String) = prop("mod.$key") as String
@@ -207,10 +211,6 @@ open class MultiLoader(private val project: Project) {
             client.set(cfEnv == cfEnvs.client || cfEnv == cfEnvs.both)
             server.set(cfEnv == cfEnvs.server || cfEnv == cfEnvs.both)
         }
-    }
-
-    fun architectury() {
-        isArchitectury = true
     }
 
     fun addEntrypoint(entrypointName: String, implementedClassName: String) {
@@ -500,7 +500,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun generateModMetadata() {
-        val buildPath = project.projectDir.resolve(if (!isForge || isArchitectury) "build/resources/main" else "build/sourceSets/main")
+        val buildPath = project.projectDir.resolve("build/resources/main")
         buildPath.resolve("META-INF").mkdirs()
 
         val changeMap = listOf(
@@ -565,6 +565,17 @@ open class MultiLoader(private val project: Project) {
                     entrypointRegistration()
                 }
             }
+            named<ProcessResources>("processResources") {
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            }
+        }
+
+        if (isForge) {
+            project.configure<SourceSetContainer> {
+                named("main") {
+                    resources.srcDir(project.file("build/resources/main"))
+                }
+            }
         }
 
         project.configure<JavaPluginExtension> {
@@ -608,6 +619,16 @@ open class MultiLoader(private val project: Project) {
         if (isNeoForge) {
             project.tasks.named<JavaExec>("runServer") {
                 standardInput = System.`in`
+            }
+        }
+
+        project.tasks.withType<JavaExec>().configureEach {
+            if (name == "runClient") {
+                if (mixinFile.exists() && isForge) args("--mixin.config=${mixinFile.name}")
+                args("--username=$playerName", "--uuid=$playerUUID")
+            }
+            if (name == "runServer") {
+                args("--nogui")
             }
         }
     }
