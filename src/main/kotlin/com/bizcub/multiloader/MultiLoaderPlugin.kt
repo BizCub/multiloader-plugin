@@ -1,5 +1,7 @@
 package com.bizcub.multiloader
 
+import com.github.javaparser.StaticJavaParser
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import dev.kikugie.fletching_table.extension.FletchingTableExtension
 import dev.kikugie.stonecutter.build.StonecutterBuildExtension
 import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
@@ -26,8 +28,6 @@ import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.nio.file.Files
-import kotlin.text.replace
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -97,8 +97,9 @@ open class MultiLoader(private val project: Project) {
         val pubEnd: String get() = propIf("pub-end", mc)
     }
 
-    class Entrypoint(val entrypointName: String, val implementedClassName: String, var className: String, var classFile: File)
+    class ClassInfo(val entrypointName: String, val classFilePath: String)
 
+    private val buildDir = project.file("build")
     private val updateDependencies = UpdateDependencies(project, this)
     private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
     private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
@@ -113,9 +114,9 @@ open class MultiLoader(private val project: Project) {
         Pair("2 Publish GitHub", "PublishGithub")
     )
     private val entrypoints = mutableListOf(
-        Entrypoint("client", "net.fabricmc.api.ClientModInitializer", "", File("")),
-        Entrypoint("main", "net.fabricmc.api.ModInitializer", "", File("")),
-        Entrypoint("modmenu", "com.terraformersmc.modmenu.api.ModMenuApi", "", File(""))
+        "client" to "net.fabricmc.api.ClientModInitializer",
+        "main" to "net.fabricmc.api.ModInitializer",
+        "modmenu" to "com.terraformersmc.modmenu.api.ModMenuApi"
     )
 
     val sc get() = project.extensions.getByType<StonecutterBuildExtension>()
@@ -131,9 +132,9 @@ open class MultiLoader(private val project: Project) {
     val serverRunFile: File get() = project.file("../../run/server")
     val mixinFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.mixins.json")
     val ctFabricFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.ct")
-    val ctForgeArchFile: File get() = project.file("build/generated/stonecutter/main/resources/${mod.mixin}.ct")
-    val atForgeFile: File get() = project.file("build/sourceSets/main/META-INF/accesstransformer.cfg")
-    val atNeoForgeFile: File get() = project.file("build/resources/main/META-INF/accesstransformer.cfg")
+    val ctForgeArchFile: File get() = buildDir.resolve("generated/stonecutter/main/resources/${mod.mixin}.ct")
+    val atForgeFile: File get() = buildDir.resolve("sourceSets/main/META-INF/accesstransformer.cfg")
+    val atNeoForgeFile: File get() = buildDir.resolve("resources/main/META-INF/accesstransformer.cfg")
     val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
 
     val playerName: String get() = "BizarreCube"
@@ -173,7 +174,6 @@ open class MultiLoader(private val project: Project) {
 
         configureGradle(pubStart)
         configureModPublication(pubStart, pubEnd)
-        generateModMetadata()
         addTaskToQueue()
 
         addDependency(repository = "api.modrinth.com/maven")
@@ -186,6 +186,11 @@ open class MultiLoader(private val project: Project) {
 
     private fun afterEvaluate() {
         configureTasks()
+    }
+
+    private fun afterProcessResources() {
+        generateModMetadata()
+        entrypointRegistration()
     }
 
     fun setBuiltFile(builtFile: Provider<RegularFile>) {
@@ -214,7 +219,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun addEntrypoint(entrypointName: String, implementedClassName: String) {
-        entrypoints.add(Entrypoint(entrypointName, implementedClassName, "", File("")))
+        entrypoints.add(entrypointName to implementedClassName)
     }
 
     fun addDependency(
@@ -500,7 +505,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun generateModMetadata() {
-        val buildPath = project.projectDir.resolve("build/resources/main")
+        val buildPath = buildDir.resolve("resources/main")
         buildPath.resolve("META-INF").mkdirs()
 
         val changeMap = listOf(
@@ -562,7 +567,7 @@ open class MultiLoader(private val project: Project) {
             }
             named("processResources") {
                 doLast {
-                    entrypointRegistration()
+                    afterProcessResources()
                 }
             }
             named<ProcessResources>("processResources") {
@@ -573,7 +578,7 @@ open class MultiLoader(private val project: Project) {
         if (isForge) {
             project.configure<SourceSetContainer> {
                 named("main") {
-                    resources.srcDir(project.file("build/resources/main"))
+                    resources.srcDir(buildDir.resolve("resources/main"))
                 }
             }
         }
@@ -648,26 +653,12 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun entrypointRegistration() {
-        val jsonFile = project.file("build/resources/main/fabric.mod.json")
+        val jsonFile = buildDir.resolve("resources/main/fabric.mod.json")
 
         if (!isFabric || !jsonFile.exists()) return
 
-        val entrypointPairs = Files.walk(project.rootProject.file("src/main/java").toPath())
-            .filter { Files.isRegularFile(it) }
-            .map { Pair(it.toString().replace("\\", ".").split("src.main.java.")[1].dropLast(5), it.toFile()) }
-            .toList()
-            .toMutableList()
-
-        entrypoints.forEach { entry ->
-            entrypointPairs.forEach { pair ->
-                if (pair.second.readText().contains(entry.implementedClassName)) {
-                    entry.className = pair.first
-                    entry.classFile = pair.second
-                }
-            }
-        }
-
-        entrypoints.removeIf { it.className == "" }
+        val classes = analyzeJavaSources().toMutableList()
+        classes.removeIf { it.entrypointName == "" }
 
         val jsonString = jsonFile.readText()
         val json = JSONObject(jsonString)
@@ -675,10 +666,50 @@ open class MultiLoader(private val project: Project) {
             json.put("entrypoints", it)
         }
 
-        entrypoints.forEach { entrypoint ->
-            entrypointsKey.put(entrypoint.entrypointName, JSONArray().put(entrypoint.className))
-        }
+        classes.forEach { entrypointsKey.put(it.entrypointName, JSONArray().put(it.classFilePath)) }
 
         jsonFile.writeText(json.toString(4))
+    }
+
+    private fun analyzeJavaSources(): List<ClassInfo> {
+        val result = mutableListOf<ClassInfo>()
+
+        project.rootProject.rootDir.resolve("src/main/java").walkTopDown()
+            .filter { it.isFile && it.extension == "java" }
+            .forEach { file ->
+                val cu = StaticJavaParser.parse(file)
+                val pkg = cu.packageDeclaration.map { it.name.asString() }.orElse("")
+
+                val imports = cu.imports
+                    .filter { !it.isStatic }
+                    .associate { it.name.asString().substringAfterLast('.') to it.name.asString() }
+
+                fun resolveType(typeName: String): String =
+                    if (typeName.contains('.')) typeName
+                    else imports[typeName] ?: if (pkg.isNotEmpty()) "$pkg.$typeName" else typeName
+
+                fun fullClassName(cls: ClassOrInterfaceDeclaration): String {
+                    val names = mutableListOf<String>()
+                    var c: ClassOrInterfaceDeclaration? = cls
+                    while (c != null) {
+                        names.add(0, c.nameAsString)
+                        c = c.parentNode.orElse(null) as? ClassOrInterfaceDeclaration
+                    }
+                    val classPart = names.joinToString("$")
+                    return if (pkg.isNotEmpty()) "$pkg.$classPart" else classPart
+                }
+
+                cu.findAll(ClassOrInterfaceDeclaration::class.java)
+                    .filter { !it.isInterface }
+                    .mapNotNull { cls ->
+                        val implemented = cls.implementedTypes.map { resolveType(it.nameWithScope) }
+                        entrypoints.firstOrNull { it.second in implemented }?.let { (entryName, _) ->
+                            ClassInfo(entryName, fullClassName(cls))
+                        }
+                    }
+                    .forEach { result.add(it) }
+            }
+
+        return result
     }
 }
