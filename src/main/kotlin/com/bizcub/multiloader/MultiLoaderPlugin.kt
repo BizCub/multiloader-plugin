@@ -669,6 +669,12 @@ open class MultiLoader(private val project: Project) {
 
         classes.forEach { entrypointsKey.put(it.entrypointName, JSONArray().put(it.classFilePath)) }
 
+        val mixinsKey = json.optJSONArray("mixins") ?: JSONArray().also {
+            json.put("mixins", it)
+        }
+
+        if (mixinFile.exists()) mixinsKey.put(mixinFile.name + "5")
+
         jsonFile.writeText(json.toString(4))
     }
 
