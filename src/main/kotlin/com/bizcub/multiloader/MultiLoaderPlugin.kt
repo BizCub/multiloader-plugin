@@ -673,7 +673,7 @@ open class MultiLoader(private val project: Project) {
             json.put("mixins", it)
         }
 
-        if (mixinFile.exists()) mixinsKey.put(mixinFile.name + "5")
+        if (mixinFile.exists()) mixinsKey.put(mixinFile.name)
 
         jsonFile.writeText(json.toString(4))
     }
