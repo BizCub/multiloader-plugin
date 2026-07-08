@@ -1,5 +1,6 @@
 package com.bizcub.multiloader
 
+import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.StaticJavaParser
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import dev.kikugie.fletching_table.extension.FletchingTableExtension
@@ -672,6 +673,10 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun analyzeJavaSources(): List<ClassInfo> {
+        StaticJavaParser.setConfiguration(
+            ParserConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17)
+        )
+
         val result = mutableListOf<ClassInfo>()
 
         project.rootProject.rootDir.resolve("src/main/java").walkTopDown()
