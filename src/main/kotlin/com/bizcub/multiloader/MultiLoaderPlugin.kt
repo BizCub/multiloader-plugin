@@ -8,6 +8,11 @@ import dev.kikugie.stonecutter.build.StonecutterBuildExtension
 import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
 import me.modmuss50.mpp.ModPublishExtension
 import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
+import net.fabricmc.loom.api.LoomGradleExtensionAPI
+import net.minecraftforge.gradle.ForgeGradleExtension
+import net.minecraftforge.gradle.MinecraftExtensionForProject
+import net.neoforged.moddevgradle.dsl.NeoForgeExtension
+import org.gradle.api.Action
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -21,6 +26,7 @@ import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -28,6 +34,7 @@ import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
+import xyz.wagyourtail.unimined.UniminedExtensionImpl
 import java.io.File
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
@@ -127,13 +134,13 @@ open class MultiLoader(private val project: Project) {
     val isFabric: Boolean get() = mod.loader == "fabric"
     val isForge: Boolean get() = mod.loader == "forge"
     val isNeoForge: Boolean get() = mod.loader == "neoforge"
+    val isForgeLegacy: Boolean get() = scp < "1.21"
     val isObfuscated: Boolean get() = scp < "26.1"
 
     val clientRunFile: File get() = project.file("../../run/client")
     val serverRunFile: File get() = project.file("../../run/server")
     val mixinFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.mixins.json")
     val ctFabricFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.ct")
-    val ctForgeArchFile: File get() = buildDir.resolve("generated/stonecutter/main/resources/${mod.mixin}.ct")
     val atForgeFile: File get() = buildDir.resolve("sourceSets/main/META-INF/accesstransformer.cfg")
     val atNeoForgeFile: File get() = buildDir.resolve("resources/main/META-INF/accesstransformer.cfg")
     val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
@@ -186,6 +193,11 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun afterEvaluate() {
+        configureCommon()
+        configureFabric()
+        configureForge()
+        configureLegacyForge()
+        configureNeoForge()
         configureTasks()
     }
 
@@ -622,9 +634,9 @@ open class MultiLoader(private val project: Project) {
         configureTask("validateAccessWidener", "processResources")
         configureTask("createMinecraftArtifacts", "processResources")
 
-        if (isNeoForge) {
-            project.tasks.named<JavaExec>("runServer") {
-                standardInput = System.`in`
+        if (isForge && isForgeLegacy) {
+            project.tasks.named("genIntellijRuns") {
+                enabled = false
             }
         }
 
@@ -634,6 +646,7 @@ open class MultiLoader(private val project: Project) {
                 args("--username=$playerName", "--uuid=$playerUUID")
             }
             if (name == "runServer") {
+                standardInput = System.`in`
                 args("--nogui")
             }
         }
@@ -722,5 +735,143 @@ open class MultiLoader(private val project: Project) {
             }
 
         return result
+    }
+
+    private fun configureCommon() {
+        project.repositories {
+            for (rep in reps) maven(rep.repository)
+        }
+
+        project.dependencies {
+            for (dep in deps) add(if (!isObfuscated) dep.configuration else dep.modConfiguration, dep.dependency) {
+                for (module in eModules) exclude(module.module)
+            }
+        }
+    }
+
+    private fun configureFabric() {
+        if (!isFabric) return
+
+        project.pluginManager.apply("fabric-loom")
+
+        project.extensions.configure<LoomGradleExtensionAPI> {
+            setBuiltFile(project.tasks.named<AbstractArchiveTask>(if (!isObfuscated) "jar" else "remapJar").get().archiveFile)
+
+            project.dependencies {
+                "minecraft"("com.mojang:minecraft:${mod.mcExact}")
+                if (isObfuscated) "mappings"(officialMojangMappings())
+            }
+
+            if (ctFabricFile.exists())
+                accessWidenerPath.set(sc.process(ctFabricFile, ctFabricProcessPath))
+
+            runConfigs {
+                getByName("client") {
+                    runDirectory.set(clientRunFile)
+                }
+                getByName("server") {
+                    runDirectory.set(serverRunFile)
+                }
+            }
+        }
+    }
+
+    private fun configureForge() {
+        if (!isForge || isForgeLegacy) return
+
+        project.pluginManager.apply("net.minecraftforge.gradle")
+
+        project.extensions.configure<MinecraftExtensionForProject> {
+            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+
+            project.repositories {
+                val fg = project.extensions.getByName<ForgeGradleExtension>("fg")
+
+                mavenizer(this)
+                maven(fg.forgeMaven)
+                maven(fg.minecraftLibsMaven)
+            }
+
+            project.dependencies {
+                "implementation"(dependency("net.minecraftforge:forge:${getDep("forge")}"))
+                if (scp >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
+            }
+
+            mappings("official", mod.mc)
+            accessTransformers.from(atForgeFile)
+
+            runs {
+                register("client") {
+                    workingDir.set(clientRunFile)
+                }
+                register("server") {
+                    workingDir.set(serverRunFile)
+                }
+            }
+        }
+    }
+
+    private fun configureLegacyForge() {
+        if (!isForge || !isForgeLegacy) return
+
+        project.pluginManager.apply("xyz.wagyourtail.unimined")
+
+        project.extensions.configure<UniminedExtensionImpl> {
+            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+
+            minecraft {
+                version(mod.mc)
+                minecraftForge {
+                    loader(getDep("forge").split("-")[1])
+                    mixinConfig(mixinFile.name)
+                    if (atNeoForgeFile.exists())
+                        accessTransformer(atNeoForgeFile)
+                }
+                mappings.mojmap()
+                runs {
+                    config("client") {
+                        workingDir = clientRunFile
+                    }
+                    config("server") {
+                        workingDir = serverRunFile
+                    }
+                }
+            }
+        }
+    }
+
+    private fun configureNeoForge() {
+        if (!isNeoForge) return
+
+        project.pluginManager.apply("net.neoforged.moddev")
+
+        project.extensions.configure<NeoForgeExtension> {
+            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+
+            version = getDep("neoforge")
+
+            if (atNeoForgeFile.exists())
+                accessTransformers.from(atNeoForgeFile)
+
+            val sourceSets = project.extensions.getByType<SourceSetContainer>()
+
+            mods.create(mod.id, Action {
+                sourceSet(sourceSets.named("main").get())
+            })
+
+            runs {
+                configureEach {
+                    disableIdeRun()
+                }
+                register("client") {
+                    gameDirectory.set(clientRunFile)
+                    client()
+                }
+                register("server") {
+                    gameDirectory.set(serverRunFile)
+                    server()
+                }
+            }
+        }
     }
 }
