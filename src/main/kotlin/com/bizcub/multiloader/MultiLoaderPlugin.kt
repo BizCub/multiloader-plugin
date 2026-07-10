@@ -743,7 +743,7 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.dependencies {
-            for (dep in deps) add(if (!isObfuscated) dep.configuration else dep.modConfiguration, dep.dependency) {
+            for (dep in deps) add(dep.configuration, dep.dependency) {
                 for (module in eModules) exclude(module.module)
             }
         }
