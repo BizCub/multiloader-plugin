@@ -34,7 +34,6 @@ import org.gradle.kotlin.dsl.*
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
-import xyz.wagyourtail.unimined.UniminedExtensionImpl
 import java.io.File
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
@@ -141,6 +140,7 @@ open class MultiLoader(private val project: Project) {
     val serverRunFile: File get() = project.file("../../run/server")
     val mixinFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.mixins.json")
     val ctFabricFile: File get() = project.rootProject.file("src/main/resources/${mod.mixin}.ct")
+    val ctForgeArchFile: File get() = buildDir.resolve("generated/stonecutter/main/resources/${mod.mixin}.ct")
     val atForgeFile: File get() = buildDir.resolve("sourceSets/main/META-INF/accesstransformer.cfg")
     val atNeoForgeFile: File get() = buildDir.resolve("resources/main/META-INF/accesstransformer.cfg")
     val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
@@ -196,7 +196,7 @@ open class MultiLoader(private val project: Project) {
         configureCommon()
         configureFabric()
         configureForge()
-        configureLegacyForge()
+        configureArch()
         configureNeoForge()
         configureTasks()
     }
@@ -634,12 +634,6 @@ open class MultiLoader(private val project: Project) {
         configureTask("validateAccessWidener", "processResources")
         configureTask("createMinecraftArtifacts", "processResources")
 
-        if (isForge && isForgeLegacy) {
-            project.tasks.named("genIntellijRuns") {
-                enabled = false
-            }
-        }
-
         project.tasks.withType<JavaExec>().configureEach {
             if (name == "runClient") {
                 if (mixinFile.exists() && isForge) args("--mixin.config=${mixinFile.name}")
@@ -776,6 +770,36 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
+    private fun configureArch() {
+        if (!isForge || !isForgeLegacy) return
+
+        project.pluginManager.apply("fabric-loom")
+
+        project.extensions.configure<LoomGradleExtensionAPI> {
+            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+
+            project.dependencies {
+                "minecraft"("com.mojang:minecraft:${mod.mc}")
+                "mappings"(officialMojangMappings())
+                "forge"("net.minecraftforge:forge:${getDep("forge")}")
+            }
+
+            if (mixinFile.exists())
+                forge.mixinConfigs(mixinFile.name)
+            if (ctForgeArchFile.exists())
+                accessWidenerPath.set(ctForgeArchFile)
+
+            runConfigs {
+                getByName("client") {
+                    runDirectory.set(clientRunFile)
+                }
+                getByName("server") {
+                    runDirectory.set(serverRunFile)
+                }
+            }
+        }
+    }
+
     private fun configureForge() {
         if (!isForge || isForgeLegacy) return
 
@@ -806,35 +830,6 @@ open class MultiLoader(private val project: Project) {
                 }
                 register("server") {
                     workingDir.set(serverRunFile)
-                }
-            }
-        }
-    }
-
-    private fun configureLegacyForge() {
-        if (!isForge || !isForgeLegacy) return
-
-        project.pluginManager.apply("xyz.wagyourtail.unimined")
-
-        project.extensions.configure<UniminedExtensionImpl> {
-            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
-
-            minecraft {
-                version(mod.mc)
-                minecraftForge {
-                    loader(getDep("forge").split("-")[1])
-                    mixinConfig(mixinFile.name)
-                    if (atNeoForgeFile.exists())
-                        accessTransformer(atNeoForgeFile)
-                }
-                mappings.mojmap()
-                runs {
-                    config("client") {
-                        workingDir = clientRunFile
-                    }
-                    config("server") {
-                        workingDir = serverRunFile
-                    }
                 }
             }
         }
