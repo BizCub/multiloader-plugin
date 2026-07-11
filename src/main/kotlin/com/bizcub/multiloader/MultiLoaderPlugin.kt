@@ -144,7 +144,7 @@ open class MultiLoader(private val project: Project) {
     val ctForgeArchFile: File get() = buildDir.resolve("generated/stonecutter/main/resources/${mod.mixin}.ct")
     val atForgeFile: File get() = buildDir.resolve("sourceSets/main/META-INF/accesstransformer.cfg")
     val atNeoForgeFile: File get() = buildDir.resolve("resources/main/META-INF/accesstransformer.cfg")
-    val ctFabricProcessPath: String get() = "build/resources/main/${mod.mixin}.ct"
+    val ctFabricProcessPath: File get() = buildDir.resolve("resources/main/${mod.mixin}.ct")
 
     val playerName: String get() = "BizarreCube"
     val playerUUID: String get() = updateDependencies.getPlayerUUIDbyName(playerName)
@@ -187,6 +187,10 @@ open class MultiLoader(private val project: Project) {
 
         addDependency(repository = "api.modrinth.com/maven")
         if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
+        if (isFabric) addDependency(
+            repository = "repo.spongepowered.org/repository/maven-public",
+            dependency = "org.spongepowered:mixin:0.8.5"
+        )
 
         project.afterEvaluate {
             afterEvaluate()
@@ -757,8 +761,8 @@ open class MultiLoader(private val project: Project) {
                 if (isObfuscated) "mappings"(officialMojangMappings())
             }
 
-            if (ctFabricFile.exists())
-                accessWidenerPath.set(sc.process(ctFabricFile, ctFabricProcessPath))
+            if (ctFabricFile.exists() && ctFabricProcessPath.exists())
+                accessWidenerPath.set(sc.process(ctFabricFile, ctFabricProcessPath.path))
 
             runConfigs {
                 getByName("client") {
