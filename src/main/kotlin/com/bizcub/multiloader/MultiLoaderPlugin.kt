@@ -9,6 +9,7 @@ import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
 import me.modmuss50.mpp.ModPublishExtension
 import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import net.fabricmc.loom.api.LoomGradleExtensionAPI
+import net.fabricmc.loom.task.RemapJarTask
 import net.minecraftforge.gradle.ForgeGradleExtension
 import net.minecraftforge.gradle.MinecraftExtensionForProject
 import net.neoforged.moddevgradle.dsl.NeoForgeExtension
@@ -773,10 +774,10 @@ open class MultiLoader(private val project: Project) {
     private fun configureArch() {
         if (!isForge || !isForgeLegacy) return
 
-        project.pluginManager.apply("fabric-loom")
+        project.pluginManager.apply("dev.architectury.loom")
 
         project.extensions.configure<LoomGradleExtensionAPI> {
-            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+            setBuiltFile(project.tasks.named<RemapJarTask>("remapJar").get().archiveFile)
 
             project.dependencies {
                 "minecraft"("com.mojang:minecraft:${mod.mc}")
