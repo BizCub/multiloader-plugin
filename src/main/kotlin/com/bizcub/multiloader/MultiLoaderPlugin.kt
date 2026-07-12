@@ -6,6 +6,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import dev.kikugie.fletching_table.extension.FletchingTableExtension
 import dev.kikugie.stonecutter.build.StonecutterBuildExtension
 import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
+import dev.kikugie.stonecutter.settings.StonecutterSettingsExtension
 import me.modmuss50.mpp.ModPublishExtension
 import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import org.gradle.api.JavaVersion
@@ -13,18 +14,20 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.RegularFile
+import org.gradle.api.initialization.Settings
 import org.gradle.api.plugins.BasePluginExtension
+import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
-import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
+import org.gradle.kotlin.dsl.getByType
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
@@ -33,16 +36,52 @@ import java.io.File
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 
-class MultiLoaderPlugin : Plugin<Project> {
-    override fun apply(project: Project) {
-        val multiloader = project.extensions.create("multiloader", MultiLoader::class.java)
+class MultiLoaderPlugin : Plugin<ExtensionAware> {
+    override fun apply(project: ExtensionAware) {
+        when (project) {
+            is Settings -> {
+                val ml = project.extensions.create("multiloader", MultiLoaderSettings::class.java)
 
-        val version = javaClass.`package`.implementationVersion ?: "unknown"
-        project.logger.lifecycle("Running MultiLoader $version")
+                project.rootProject.name = project.extra["mod.name"] as String
 
-        val isNameSameAsRootProject = project.name == project.rootProject.name
-        if (isNameSameAsRootProject) multiloader.firstInit()
-        if (!isNameSameAsRootProject) multiloader.init()
+                project.gradle.settingsEvaluated {
+                    ml.applyStonecutter(project)
+                }
+            }
+            is Project -> {
+                val multiloader = project.extensions.create("multiloader", MultiLoader::class.java)
+
+                val version = javaClass.`package`.implementationVersion ?: "unknown"
+                project.logger.lifecycle("Running MultiLoader $version")
+
+                val isNameSameAsRootProject = project.name == project.rootProject.name
+                if (isNameSameAsRootProject) multiloader.firstInit()
+                if (!isNameSameAsRootProject) multiloader.init()
+            }
+        }
+    }
+}
+
+open class MultiLoaderSettings {
+    val fb = "fabric"; val fg = "forge"; val nf = "neoforge"
+
+    private val pendingVersions = mutableListOf<Pair<String, Array<out String>>>()
+
+    fun match(version: String, vararg loaders: String) {
+        pendingVersions.add(version to loaders)
+    }
+
+    internal fun applyStonecutter(settings: Settings) {
+        val stonecutter = settings.extensions.getByType<StonecutterSettingsExtension>()
+
+        stonecutter.create(settings.rootProject) {
+            pendingVersions.forEach { (ver, loaders) ->
+                loaders.forEach { loader ->
+                    val suffix = if (loader == fg && stonecutter.eval(ver, "<1.21")) ".arch" else ""
+                    version("$ver-$loader", ver).buildscript.set("buildscripts/$loader$suffix.gradle.kts")
+                }
+            }
+        }
     }
 }
 
@@ -61,7 +100,7 @@ open class MultiLoader(private val project: Project) {
     val eModules = mutableListOf<Module>()
     class Module(val module: String)
 
-    val mrEnvs = MREnvs()
+    val mrEnvs by lazy { MREnvs() }
     class MREnvs {
         val clientOnly = ModrinthEnvironment.CLIENT_ONLY
         val serverOnly = ModrinthEnvironment.SERVER_ONLY
