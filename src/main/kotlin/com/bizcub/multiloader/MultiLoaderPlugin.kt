@@ -226,10 +226,6 @@ open class MultiLoader(private val project: Project) {
 
         addDependency(repository = "api.modrinth.com/maven")
         if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
-        if (isFabric) addDependency(
-            repository = "repo.spongepowered.org/repository/maven-public",
-            dependency = "org.spongepowered:mixin:0.8.5"
-        )
 
         project.afterEvaluate {
             afterEvaluate()
@@ -729,6 +725,8 @@ open class MultiLoader(private val project: Project) {
         }
 
         if (mixinFile.exists()) mixinsKey.put(mixinFile.name)
+
+        if (isMainCTFileExist()) json.put("accessWidener", "${mod.mixin}.ct")
 
         jsonFile.writeText(json.toString(4))
     }
