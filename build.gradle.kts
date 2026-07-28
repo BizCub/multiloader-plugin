@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.bizcub"
-version = "0.7.1"
+version = "0.7.2"
 
 tasks.jar {
     manifest {
@@ -25,6 +25,8 @@ dependencies {
 
     implementation("org.json:json:20231013")
     implementation("com.github.javaparser:javaparser-symbol-solver-core:3.28.2")
+    implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-toml:2.15.2")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.15.2")
 }
 
 gradlePlugin {

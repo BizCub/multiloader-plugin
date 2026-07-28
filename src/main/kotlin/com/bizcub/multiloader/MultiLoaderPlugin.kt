@@ -1,5 +1,6 @@
 package com.bizcub.multiloader
 
+import com.fasterxml.jackson.dataformat.toml.TomlMapper
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.StaticJavaParser
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
@@ -230,13 +231,14 @@ open class MultiLoader(private val project: Project) {
 
     private fun afterEvaluate() {
         configureCommon()
-        configureTasks()
         createRunConfiguration()
+        configureTasks()
     }
 
     private fun afterProcessResources() {
         generateAccessFiles()
         generateModMetadata()
+        mixinConfigRegistration()
         entrypointRegistration()
     }
 
@@ -660,11 +662,6 @@ open class MultiLoader(private val project: Project) {
                 into(project.rootDir.resolve("build/libs/${mod.version}"))
                 dependsOn("build")
             }
-            if (scc.isActive) {
-                register("buildActive") { dependsOn(named("buildAndCollect")) }
-                register("runActiveClient") { dependsOn(named("runClient")) }
-                register("runActiveServer") { dependsOn(named("runServer")) }
-            }
             named<Jar>("jar") {
                 manifest {
                     attributes["MixinConfigs"] = mixinFile.name
@@ -718,6 +715,14 @@ open class MultiLoader(private val project: Project) {
         configureTask("validateAccessWidener", "processResources")
         configureTask("createMinecraftArtifacts", "processResources")
 
+        project.tasks {
+            if (scc.isActive) {
+                register("buildActive") { dependsOn(named("buildAndCollect")) }
+                register("runActiveClient") { dependsOn(named("runClient")) }
+                register("runActiveServer") { dependsOn(named("runServer")) }
+            }
+        }
+
         project.tasks.withType<JavaExec>().configureEach {
             if (name == "runClient") {
                 if (mixinFile.exists() && isForge) args("--mixin.config=${mixinFile.name}")
@@ -742,6 +747,28 @@ open class MultiLoader(private val project: Project) {
                 )
             )
         }
+    }
+
+    private fun mixinConfigRegistration() {
+        val tomlFile = if (isForge && !isForgeLegacy)
+            buildResourcesDirForge.resolve("META-INF/mods.toml")
+        else {
+            buildResourcesDir.resolve("META-INF/neoforge.mods.toml")
+        }
+
+        if (!isForge && !isNeoForge || !tomlFile.exists()) return
+
+        println("mixinConfigRegistration()")
+
+        val mapper = TomlMapper()
+        val data = if (tomlFile.exists()) {
+            mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
+        } else {
+            mutableMapOf()
+        }
+
+        if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
+        mapper.writeValue(tomlFile, data)
     }
 
     private fun entrypointRegistration() {
