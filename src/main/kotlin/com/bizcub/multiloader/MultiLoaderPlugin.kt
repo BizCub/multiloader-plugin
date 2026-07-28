@@ -23,6 +23,7 @@ import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -146,11 +147,7 @@ open class MultiLoader(private val project: Project) {
         Pair("0 Run Client", "runActiveClient"),
         Pair("0 Run Server", "runActiveServer"),
         Pair("1 Build Active", "buildActive"),
-        Pair("1 Build All", "buildAndCollect"),
-        Pair("2 Publish Mods", "PublishMods"),
-        Pair("2 Publish Modrinth", "PublishModrinth"),
-        Pair("2 Publish CurseForge", "PublishCurseforge"),
-        Pair("2 Publish GitHub", "PublishGithub")
+        Pair("1 Build All", "buildAndCollect")
     )
     private val entrypoints = mutableListOf(
         "client" to "net.fabricmc.api.ClientModInitializer",
@@ -205,7 +202,6 @@ open class MultiLoader(private val project: Project) {
     fun init() {
         setServerProperties()
         neoforgeFix()
-        createRunConfiguration()
         generateAccessFiles()
         access()
         setProperties()
@@ -235,12 +231,24 @@ open class MultiLoader(private val project: Project) {
     private fun afterEvaluate() {
         configureCommon()
         configureTasks()
+        createRunConfiguration()
     }
 
     private fun afterProcessResources() {
         generateAccessFiles()
         generateModMetadata()
         entrypointRegistration()
+    }
+
+    fun addSourceSet(name: String) {
+        val sourceSets = getSourceSets()
+
+        sourceSets.create(name) {
+            java {
+                compileClasspath += sourceSets["main"].compileClasspath + sourceSets["main"].output
+                runtimeClasspath += sourceSets["main"].runtimeClasspath + sourceSets["main"].output
+            }
+        }
     }
 
     fun setBuiltFile(builtFile: Provider<RegularFile>) {
@@ -343,8 +351,12 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
+    private fun getSourceSets(): SourceSetContainer {
+        return project.extensions.getByType<SourceSetContainer>()
+    }
+
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
-        project.extensions.configure<ModPublishExtension>("publishMods", block)
+        project.extensions.configure("publishMods", block)
     }
 
     private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
@@ -513,29 +525,55 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private fun createRunConfiguration() {
+    private fun createRunConfigurationFile(name: String, content: String, replaceName: String, replaceTask: String) {
         val filePath = project.rootDir.resolve(".idea/runConfigurations")
         filePath.mkdirs()
 
-        fun createFile(name: String, content: String, replaceName: String, replaceTask: String) {
-            val file = filePath.resolve("$name.xml")
-            file.createNewFile()
-            file.writeText(content
-                .replace("%NAME%", replaceName)
-                .replace("%TASK%", replaceTask)
-            )
-        }
+        val file = filePath.resolve("$name.xml")
+        file.createNewFile()
+        file.writeText(content
+            .replace("%NAME%", replaceName)
+            .replace("%TASK%", replaceTask)
+        )
+    }
 
+    private fun definitionFileConfigurationNameAndCreate(resource: String, name: String, task: String = "") {
+        val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
+        var task1 = task
+        if (task.isEmpty()) {
+            task1 = fileName.lowerCaseFirst()
+        }
+        if (project.tasks.findByName(task1) != null) {
+            createRunConfigurationFile(fileName, getResource("runConfiguration/$resource.xml"), name, task1)
+        }
+    }
+
+    private fun createRunConfiguration() {
         mainTasks.forEach { (name, task) ->
-            val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
-            createFile(fileName, getResource("runConfiguration/runConfigurationMain.xml"), name, task)
+            definitionFileConfigurationNameAndCreate("runConfigurationMain", name, task)
         }
 
         publishPlatforms.forEach { platform ->
-            val name = "Publish $platform ${mod.mc}"
-            val fileName = name.replace(" ", "")
-            val task = fileName.lowerCaseFirst()
-            createFile(fileName, getResource("runConfiguration/runConfigurationPublish.xml"), name, task)
+            val name = "0 Publish $platform"
+            definitionFileConfigurationNameAndCreate("runConfigurationPublish", name)
+        }
+
+        publishPlatforms.forEach { platform ->
+            val name = "1 Publish $platform ${mod.mc}"
+            definitionFileConfigurationNameAndCreate("runConfigurationPublish", name)
+        }
+
+        val envs = listOf("Client", "Server")
+        val sourceSetList = getSourceSets().stream()
+            .filter { it.name != "main" && it.name != "test" }
+            .map { it.name }
+            .toList()
+
+        envs.forEach { env ->
+            sourceSetList.forEach { sourceSet ->
+                val name = "0 Run ${sourceSet.upperCaseFirst()} $env"
+                definitionFileConfigurationNameAndCreate("runConfigurationMain", name)
+            }
         }
     }
 
@@ -592,7 +630,9 @@ open class MultiLoader(private val project: Project) {
         }
 
         fun process(fileName: String, path: String = "") {
-            buildPath.resolve(path).resolve(fileName).writeText(getChangedResource("mod/${fileName}"))
+            if (!resourcesDir.resolve(path).resolve(fileName).exists()) {
+                buildPath.resolve(path).resolve(fileName).writeText(getChangedResource("mod/${fileName}"))
+            }
         }
 
         process("pack.mcmeta")
@@ -733,7 +773,7 @@ open class MultiLoader(private val project: Project) {
 
     private fun analyzeJavaSources(): List<ClassInfo> {
         StaticJavaParser.setConfiguration(
-            ParserConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17)
+            ParserConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21)
         )
 
         val result = mutableListOf<ClassInfo>()

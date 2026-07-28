@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "com.bizcub"
-version = "0.7.0"
+version = "0.7.1"
 
 tasks.jar {
     manifest {
@@ -24,7 +24,7 @@ dependencies {
     implementation("dev.kikugie:fletching-table:0.1.0-alpha.23")
 
     implementation("org.json:json:20231013")
-    implementation("com.github.javaparser:javaparser-symbol-solver-core:3.25.8")
+    implementation("com.github.javaparser:javaparser-symbol-solver-core:3.28.2")
 }
 
 gradlePlugin {
