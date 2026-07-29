@@ -284,6 +284,7 @@ open class MultiLoader(private val project: Project) {
     fun addDependency(
         repository: String = "",
         configuration: String = "implementation",
+        vararg configurations: String = arrayOf(),
         dependency: String = "",
         excludedModules: List<String> = listOf(),
         isPublishDepEnabled: Boolean = false,
@@ -294,7 +295,13 @@ open class MultiLoader(private val project: Project) {
             reps.add(Repository("https://$repository"))
         }
         if (dependency.isNotEmpty()) {
-            deps.add(Dependency(configuration, dependency))
+            if (configurations.isEmpty()) {
+                deps.add(Dependency(configuration, dependency))
+            } else {
+                configurations.forEach {
+                    deps.add(Dependency(it, dependency))
+                }
+            }
         }
         if (isPublishDepEnabled) {
             addPublishDep(
@@ -579,7 +586,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun updateOrCreateIssueTemplates() {
-        val issueTemplatesDir = project.rootDir.resolve(".io.github/ISSUE_TEMPLATE")
+        val issueTemplatesDir = project.rootDir.resolve(".github/ISSUE_TEMPLATE")
         issueTemplatesDir.mkdirs()
         val bugReportFile = issueTemplatesDir.resolve("bug-report.yml")
         bugReportFile.writeText(getResource("issueTemplate/bug-report.yml"))
@@ -846,6 +853,7 @@ open class MultiLoader(private val project: Project) {
     private fun configureCommon() {
         project.repositories {
             for (rep in reps) maven(rep.repository)
+            mavenLocal()
         }
 
         project.dependencies {
