@@ -1,12 +1,11 @@
-# MultiLoader Plugin
+# Multiloader Plugin
+
+[![Gradle Plugin Portal](https://img.shields.io/gradle-plugin-portal/v/io.github.bizcub.multiloader)](https://plugins.gradle.org/plugin/io.github.bizcub.multiloader)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Gradle plugin that simplifies developing Minecraft mods for multiple loaders (**Fabric**, **Forge**, **NeoForge**) and multiple game versions at the same time.
 
 The plugin removes the need to manually maintain separate `build.gradle`, `fabric.mod.json`, `mods.toml`, and `neoforge.mods.toml` files for each Minecraft version. Under the hood it uses [Stonecutter](https://github.com/kikugie/stonecutter) to manage multi-version subprojects.
-
-- **Plugin ID:** `com.bizcub.multiloader`
-- **Group:** `com.bizcub`
-- **Version:** `0.7.2`
 
 ## Features
 
@@ -21,7 +20,7 @@ The plugin removes the need to manually maintain separate `build.gradle`, `fabri
 ## Requirements
 
 - **Gradle 8.1+** (the reference implementation uses Gradle 9.3.0)
-- **Java 17+** (for modern Minecraft versions 1.18+)
+- **Java 8+** (for modern Minecraft versions 1.16.5+)
 
 ## Installation
 
@@ -41,7 +40,7 @@ pluginManagement {
 }  
   
 plugins {  
-    id("com.bizcub.multiloader") version "0.7.2"  
+    id("com.bizcub.multiloader") version "0.7+"  
 }  
   
 multiloader {  
@@ -82,7 +81,3 @@ Loader buildscripts are expected at `buildscripts/<loader>.gradle.kts` (for Forg
 ```bash  
 ./gradlew build  
 ```  
-
-## License
-
-Add your project's license here.
