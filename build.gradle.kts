@@ -1,9 +1,9 @@
 plugins {
     `kotlin-dsl`
-    `maven-publish`
+    id("com.gradle.plugin-publish") version "1.3.0"
 }
 
-group = "com.bizcub"
+group = "io.github.bizcub"
 version = "0.7.2"
 
 tasks.jar {
@@ -30,10 +30,15 @@ dependencies {
 }
 
 gradlePlugin {
+    website = "https://github.com/BizCub/multiloader-plugin"
+    vcsUrl = "https://github.com/BizCub/multiloader-plugin.git"
     plugins {
         create("multiloader") {
-            id = "com.bizcub.multiloader"
-            implementationClass = "com.bizcub.multiloader.MultiLoaderPlugin"
+            id = "io.github.bizcub.multiloader"
+            displayName = "Multiloader Plugin"
+            description = "A Gradle plugin that helps download and manage dependencies for multi-loader projects"
+            tags = listOf("multiloader", "multi-platform", "minecraft-modding")
+            implementationClass = "io.github.bizcub.multiloader.MultiLoaderPlugin"
         }
     }
 }

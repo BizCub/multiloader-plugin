@@ -1,4 +1,4 @@
-package com.bizcub.multiloader
+package io.github.bizcub.multiloader
 
 import org.gradle.api.Project
 import org.json.JSONArray

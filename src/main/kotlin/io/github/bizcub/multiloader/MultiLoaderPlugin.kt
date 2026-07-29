@@ -1,4 +1,4 @@
-package com.bizcub.multiloader
+package io.github.bizcub.multiloader
 
 import com.fasterxml.jackson.dataformat.toml.TomlMapper
 import com.github.javaparser.ParserConfiguration
@@ -29,7 +29,6 @@ import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
-import org.gradle.kotlin.dsl.getByType
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
@@ -580,7 +579,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun updateOrCreateIssueTemplates() {
-        val issueTemplatesDir = project.rootDir.resolve(".github/ISSUE_TEMPLATE")
+        val issueTemplatesDir = project.rootDir.resolve(".io.github/ISSUE_TEMPLATE")
         issueTemplatesDir.mkdirs()
         val bugReportFile = issueTemplatesDir.resolve("bug-report.yml")
         bugReportFile.writeText(getResource("issueTemplate/bug-report.yml"))
