@@ -75,9 +75,3 @@ Loader buildscripts are expected at `buildscripts/<loader>.gradle.kts` (for Forg
 | `runActiveServer`   | Run the server of the active version       |  
 | `buildActive`       | Build the active version                   |  
 | `buildAndCollect`   | Build all versions and collect artifacts   |  
-
-## Building the Plugin
-
-```bash  
-./gradlew build  
-```  
