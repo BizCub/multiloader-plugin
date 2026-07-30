@@ -230,8 +230,8 @@ open class MultiLoader(private val project: Project) {
 
     private fun afterEvaluate() {
         configureCommon()
-        createRunConfiguration()
         configureTasks()
+        createRunConfiguration()
     }
 
     private fun afterProcessResources() {
