@@ -231,10 +231,10 @@ open class MultiLoader(private val project: Project) {
     private fun afterEvaluate() {
         configureCommon()
         configureTasks()
+        createRunConfiguration()
     }
 
     private fun afterProcessResources() {
-        createRunConfiguration()
         generateAccessFiles()
         generateModMetadata()
         mixinConfigRegistration()
@@ -763,6 +763,8 @@ open class MultiLoader(private val project: Project) {
         }
 
         if (!isForge && !isNeoForge || !tomlFile.exists()) return
+
+        println("mixinConfigRegistration()")
 
         val mapper = TomlMapper()
         val data = if (tomlFile.exists()) {
