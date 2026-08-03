@@ -231,10 +231,10 @@ open class MultiLoader(private val project: Project) {
     private fun afterEvaluate() {
         configureCommon()
         configureTasks()
-        createRunConfiguration()
     }
 
     private fun afterProcessResources() {
+        createRunConfiguration()
         generateAccessFiles()
         generateModMetadata()
         mixinConfigRegistration()
@@ -764,8 +764,6 @@ open class MultiLoader(private val project: Project) {
 
         if (!isForge && !isNeoForge || !tomlFile.exists()) return
 
-        println("mixinConfigRegistration()")
-
         val mapper = TomlMapper()
         val data = if (tomlFile.exists()) {
             mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
@@ -855,30 +853,9 @@ open class MultiLoader(private val project: Project) {
             mavenLocal()
         }
 
-        val sourceSetList = getSourceSets().stream()
-            .filter { it.name != "main" && it.name != "test" }
-            .map { it.name }
-            .toList()
-
-        fun isDepConfigurationStartsWithSourceSet(configuration: String): Boolean {
-            for (sourceSet in sourceSetList) {
-                if (configuration.startsWith(sourceSet)) {
-                    return true
-                }
-            }
-            return false
-        }
-
         project.dependencies {
-            for (dep in deps) {
-                val configuration = if (isFabric && isObfuscated && !isDepConfigurationStartsWithSourceSet(dep.configuration))
-                    dep.modConfiguration
-                else
-                    dep.configuration
-
-                add(configuration, dep.dependency) {
-                    for (module in eModules) exclude(module.module)
-                }
+            for (dep in deps) add(if (isFabric && isObfuscated) dep.modConfiguration else dep.configuration, dep.dependency) {
+                for (module in eModules) exclude(module.module)
             }
         }
     }
