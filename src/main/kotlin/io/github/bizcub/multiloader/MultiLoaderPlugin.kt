@@ -16,6 +16,7 @@ import org.gradle.api.Project
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.file.RegularFile
 import org.gradle.api.initialization.Settings
+import org.gradle.api.logging.Logging
 import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.plugins.JavaPluginExtension
@@ -39,6 +40,7 @@ fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 
 class MultiLoaderPlugin : Plugin<ExtensionAware> {
     override fun apply(project: ExtensionAware) {
+        val version = javaClass.`package`.implementationVersion ?: "unknown"
         when (project) {
             is Settings -> {
                 val ml = project.extensions.create("multiloader", MultiLoaderSettings::class.java)
@@ -47,12 +49,13 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
 
                 project.gradle.settingsEvaluated {
                     ml.applyStonecutter(project)
+
+                    Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
                 }
             }
             is Project -> {
                 val multiloader = project.extensions.create("multiloader", MultiLoader::class.java)
 
-                val version = javaClass.`package`.implementationVersion ?: "unknown"
                 project.logger.lifecycle("Running MultiLoader $version")
 
                 val isNameSameAsRootProject = project.name == project.rootProject.name
@@ -162,6 +165,7 @@ open class MultiLoader(private val project: Project) {
 
     val clientRunFile: File get() = project.file("../../run/client")
     val serverRunFile: File get() = project.file("../../run/server")
+    val iconFile: File get() = resourcesDir.resolve("icon.png")
     val mixinFile: File get() = resourcesDir.resolve("${mod.mixin}.mixins.json")
     val ctMainFile: File get() = resourcesDir.resolve("${mod.mixin}.ct")
     val ctFabricFile: File get() = buildResourcesDir.resolve("${mod.mixin}.ct")
@@ -706,8 +710,17 @@ open class MultiLoader(private val project: Project) {
                 properties.tags(version, loader)
                 constants.match(node.metadata.project.substringAfterLast('-'), "fabric", "neoforge", "forge")
                 swaps["mod_id"] = "\"${project.property("mod.id")}\";"
+
+                val map = linkedMapOf<String, Int>()
+                map["accessWidener"] = 2
+                map["classTweaker"] = 2
                 replacements.string(current.parsed >= "26.1") {
-                    replace("classTweaker v1 named", "classTweaker v1 official")
+                    for ((key, value) in map) {
+                        for (i in 1..value) {
+                            val str = "$key v$i"
+                            replace("$str named", "$str official")
+                        }
+                    }
                 }
             }
         }
@@ -765,13 +778,13 @@ open class MultiLoader(private val project: Project) {
         if (!isForge && !isNeoForge || !tomlFile.exists()) return
 
         val mapper = TomlMapper()
-        val data = if (tomlFile.exists()) {
-            mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
-        } else {
-            mutableMapOf()
-        }
+        val data = mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
+
+        val mods = data.getOrPut("mods") { mutableListOf<MutableMap<String, Any>>() } as MutableList<MutableMap<String, Any>>
+        if (iconFile.exists()) mods[0]["logoFile"] = "icon.png"
 
         if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
+
         mapper.writeValue(tomlFile, data)
     }
 
@@ -797,6 +810,8 @@ open class MultiLoader(private val project: Project) {
         if (mixinFile.exists()) mixinsKey.put(mixinFile.name)
 
         if (isMainCTFileExist()) json.put("accessWidener", "${mod.mixin}.ct")
+
+        if (iconFile.exists()) json.put("icon", "icon.png")
 
         jsonFile.writeText(json.toString(4))
     }
