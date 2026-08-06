@@ -21,6 +21,8 @@ import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
+import org.gradle.api.publish.PublishingExtension
+import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
@@ -41,16 +43,16 @@ fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
 class MultiLoaderPlugin : Plugin<ExtensionAware> {
     override fun apply(project: ExtensionAware) {
         val version = javaClass.`package`.implementationVersion ?: "unknown"
+
         when (project) {
             is Settings -> {
-                val ml = project.extensions.create("multiloader", MultiLoaderSettings::class.java)
+                val multiloader = project.extensions.create("multiloader", MultiLoaderSettings::class.java)
 
+                Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
                 project.rootProject.name = project.extra["mod.name"] as String
 
                 project.gradle.settingsEvaluated {
-                    ml.applyStonecutter(project)
-
-                    Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
+                    multiloader.applyStonecutter(project)
                 }
             }
             is Project -> {
@@ -58,9 +60,9 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
 
                 project.logger.lifecycle("Running MultiLoader $version")
 
-                val isNameSameAsRootProject = project.name == project.rootProject.name
-                if (isNameSameAsRootProject) multiloader.firstInit()
-                if (!isNameSameAsRootProject) multiloader.init()
+                val isRootProject = project == project.rootProject
+                if (isRootProject) multiloader.firstInit()
+                if (!isRootProject) multiloader.init()
             }
         }
     }
@@ -134,6 +136,7 @@ open class MultiLoader(private val project: Project) {
         val name: String get() = modProp("name")
         val description: String get() = modProp("description")
         val version: String get() = modProp("version")
+        val group: String get() = "io.github.bizcub"
         val modrinth: String get() = modProp("modrinth")
         val curseforge: String get() = modProp("curseforge")
         val github: String get() = modProp("github")
@@ -146,6 +149,7 @@ open class MultiLoader(private val project: Project) {
     private val updateDependencies = UpdateDependencies(project, this)
     private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
     private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
+    private val publishMaven = listOf("ToMavenLocal")
     private val mainTasks = listOf(
         Pair("0 Run Client", "runActiveClient"),
         Pair("0 Run Server", "runActiveServer"),
@@ -230,6 +234,12 @@ open class MultiLoader(private val project: Project) {
         project.afterEvaluate {
             afterEvaluate()
         }
+
+        project.gradle.projectsEvaluated {
+            if (project.name == sc.versions.last().project) {
+                afterFinishBuild()
+            }
+        }
     }
 
     private fun afterEvaluate() {
@@ -238,11 +248,14 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun afterProcessResources() {
-        createRunConfiguration()
         generateAccessFiles()
         generateModMetadata()
         mixinConfigRegistration()
         entrypointRegistration()
+    }
+
+    private fun afterFinishBuild() {
+        createRunConfiguration()
     }
 
     fun addSourceSet(name: String) {
@@ -481,9 +494,11 @@ open class MultiLoader(private val project: Project) {
                 displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
                 changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
                 version.set(project.version.toString())
-                val releaseType = if (mod.version.contains("-beta.")) BETA
-                else if (mod.version.contains("-alpha.")) ALPHA
-                else STABLE
+                val releaseType = when {
+                    mod.version.contains("-beta.") -> BETA
+                    mod.version.contains("-alpha.") -> ALPHA
+                    else -> STABLE
+                }
                 type.set(releaseType)
                 modLoaders.add(mod.loader)
                 if (isFabric) modLoaders.add("quilt")
@@ -512,6 +527,20 @@ open class MultiLoader(private val project: Project) {
                     tagName.set("v${project.version}")
                 }
             }
+
+            if (prop("multiloader.enablePublishToMaven") == "true") {
+                project.plugins.apply("maven-publish")
+                project.extensions.configure(PublishingExtension::class.java) {
+                    publications {
+                        create<MavenPublication>("mavenJava") {
+                            groupId = mod.group
+                            artifactId = mod.mixin
+                            version = project.version.toString()
+                            from(project.components["java"])
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -537,55 +566,51 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private fun createRunConfigurationFile(name: String, content: String, replaceName: String, replaceTask: String) {
-        val filePath = project.rootDir.resolve(".idea/runConfigurations")
-        filePath.mkdirs()
-
-        val file = filePath.resolve("$name.xml")
-        file.createNewFile()
-        file.writeText(content
-            .replace("%NAME%", replaceName)
-            .replace("%TASK%", replaceTask)
-        )
-    }
-
-    private fun definitionFileConfigurationNameAndCreate(resource: String, name: String, task: String = "") {
-        val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
-        var task1 = task
-        if (task.isEmpty()) {
-            task1 = fileName.lowerCaseFirst()
-        }
-        if (project.tasks.findByName(task1) != null) {
-            createRunConfigurationFile(fileName, getResource("runConfiguration/$resource.xml"), name, task1)
-        }
-    }
-
     private fun createRunConfiguration() {
-        mainTasks.forEach { (name, task) ->
-            definitionFileConfigurationNameAndCreate("runConfigurationMain", name, task)
-        }
+        project.rootDir.resolve(".idea/runConfigurations")
+            .listFiles { it.extension == "xml" && it.name.startsWith("Multiloader_")}
+            ?.forEach(File::delete)
 
-        publishPlatforms.forEach { platform ->
-            val name = "0 Publish $platform"
-            definitionFileConfigurationNameAndCreate("runConfigurationPublish", name)
-        }
-
-        publishPlatforms.forEach { platform ->
-            val name = "1 Publish $platform ${mod.mc}"
-            definitionFileConfigurationNameAndCreate("runConfigurationPublish", name)
-        }
-
-        val envs = listOf("Client", "Server")
-        val sourceSetList = getSourceSets().stream()
-            .filter { it.name != "main" && it.name != "test" }
-            .map { it.name }
-            .toList()
-
-        envs.forEach { env ->
-            sourceSetList.forEach { sourceSet ->
-                val name = "0 Run ${sourceSet.upperCaseFirst()} $env"
-                definitionFileConfigurationNameAndCreate("runConfigurationMain", name)
+        fun definitionFileConfigurationName(resource: String, name: String, task: String = "") {
+            val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
+            val task1 = task.ifEmpty {
+                fileName.lowerCaseFirst()
             }
+
+            val filePath = project.rootDir.resolve(".idea/runConfigurations")
+            filePath.mkdirs()
+
+            val file = filePath.resolve("Multiloader_$fileName.xml")
+            file.createNewFile()
+            file.writeText(getResource("runConfiguration/$resource.xml")
+                .replace("%NAME%", name)
+                .replace("%TASK%", task1)
+            )
+        }
+
+        mainTasks.forEach { (name, task) ->
+            definitionFileConfigurationName("main", name, task)
+        }
+
+        fun generateMultiplePublishConfigurations(list: List<String>, fileName: String) {
+            list.forEach { platform ->
+                definitionFileConfigurationName(fileName, "0 Publish $platform Active")
+            }
+
+            list.forEach { platform ->
+                definitionFileConfigurationName(fileName, "1 Publish $platform")
+            }
+
+            sc.versions.forEach { version ->
+                list.forEach { platform ->
+                    definitionFileConfigurationName(fileName, "2 Publish $platform ${version.version}")
+                }
+            }
+        }
+
+        generateMultiplePublishConfigurations(publishPlatforms, "publishPlatform")
+        if (prop("multiloader.enablePublishToMaven") == "true") {
+            generateMultiplePublishConfigurations(publishMaven, "publishMaven")
         }
     }
 
@@ -661,11 +686,17 @@ open class MultiLoader(private val project: Project) {
         project.version = "${mod.version}-${mod.loader}+$pubStart"
 
         project.tasks {
-            publishPlatforms.forEach { publish ->
-                register<Copy>("publish$publish${mod.mc}") {
-                    group = "publishing"
-                    dependsOn("publish$publish")
+            fun registerMultipleTasks(list: List<String>) {
+                list.forEach { publish ->
+                    register<Copy>("publish$publish${mod.mc}") {
+                        group = "publishing"
+                        dependsOn("publish$publish")
+                    }
                 }
+            }
+            registerMultipleTasks(publishPlatforms)
+            if (prop("multiloader.enablePublishToMaven") == "true") {
+                registerMultipleTasks(publishMaven)
             }
             register<Copy>("buildAndCollect") {
                 group = "build"
@@ -677,13 +708,11 @@ open class MultiLoader(private val project: Project) {
                     attributes["MixinConfigs"] = mixinFile.name
                 }
             }
-            named("processResources") {
+            named<ProcessResources>("processResources") {
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
                 doLast {
                     afterProcessResources()
                 }
-            }
-            named<ProcessResources>("processResources") {
-                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
             }
         }
 
@@ -739,6 +768,19 @@ open class MultiLoader(private val project: Project) {
                 register("buildActive") { dependsOn(named("buildAndCollect")) }
                 register("runActiveClient") { dependsOn(named("runClient")) }
                 register("runActiveServer") { dependsOn(named("runServer")) }
+
+                fun registerMultipleTasks(list: List<String>) {
+                    list.forEach { publish ->
+                        register("publish${publish}Active") {
+                            dependsOn(named("publish$publish"))
+                        }
+                    }
+                }
+
+                registerMultipleTasks(publishPlatforms)
+                if (prop("multiloader.enablePublishToMaven") == "true") {
+                    registerMultipleTasks(publishMaven)
+                }
             }
         }
 
@@ -755,8 +797,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun addTaskToQueue() {
-        val isIdeaSync = System.getProperty("idea.sync.active", "false").toBoolean()
-        if (isIdeaSync) {
+        if (System.getProperty("idea.sync.active", "false").toBoolean()) {
             val sp = project.gradle.startParameter
             sp.setTaskRequests(
                 sp.taskRequests + DefaultTaskExecutionRequest(
