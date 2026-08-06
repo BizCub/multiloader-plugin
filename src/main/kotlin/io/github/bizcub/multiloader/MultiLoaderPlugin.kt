@@ -210,7 +210,6 @@ open class MultiLoader(private val project: Project) {
     fun init() {
         setServerProperties()
         neoforgeFix()
-        generateAccessFiles()
         access()
         setProperties()
         updateOrCreateIssueTemplates()
@@ -248,7 +247,6 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun afterProcessResources() {
-        generateAccessFiles()
         generateModMetadata()
         mixinConfigRegistration()
         entrypointRegistration()
@@ -632,14 +630,6 @@ open class MultiLoader(private val project: Project) {
             ft.accessConverter.register("main") {
                 add("${mod.mixin}.ct")
             }
-        }
-    }
-
-    private fun generateAccessFiles() {
-        if (!isMainCTFileExist()) return
-
-        if (isFabric || (isForge && isForgeLegacy)) {
-            sc.process(ctMainFile, "build/resources/main/${mod.mixin}.ct")
         }
     }
 
