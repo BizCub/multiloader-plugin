@@ -132,7 +132,7 @@ open class MultiLoader(private val project: Project) {
         val mcExact: String get() = propIf("version", mc)
         val loader: String get() = scc.project.substringAfterLast("-")
         val id: String get() = modProp("id")
-        val mixin: String get() = id.replace("_", "-")
+        val idDashed: String get() = id.replace("_", "-")
         val name: String get() = modProp("name")
         val description: String get() = modProp("description")
         val version: String get() = modProp("version")
@@ -170,9 +170,9 @@ open class MultiLoader(private val project: Project) {
     val clientRunFile: File get() = project.file("../../run/client")
     val serverRunFile: File get() = project.file("../../run/server")
     val iconFile: File get() = resourcesDir.resolve("icon.png")
-    val mixinFile: File get() = resourcesDir.resolve("${mod.mixin}.mixins.json")
-    val ctMainFile: File get() = resourcesDir.resolve("${mod.mixin}.ct")
-    val ctFabricFile: File get() = buildResourcesDir.resolve("${mod.mixin}.ct")
+    val mixinFile: File get() = resourcesDir.resolve("${mod.idDashed}.mixins.json")
+    val ctMainFile: File get() = resourcesDir.resolve("${mod.idDashed}.ct")
+    val ctFabricFile: File get() = buildResourcesDir.resolve("${mod.idDashed}.ct")
     val ctForgeArchFile: File get() = ctFabricFile
     val atForgeFile: File get() = buildResourcesDirForge.resolve("META-INF/accesstransformer.cfg")
     val atNeoForgeFile: File get() = buildResourcesDir.resolve("META-INF/accesstransformer.cfg")
@@ -532,7 +532,7 @@ open class MultiLoader(private val project: Project) {
                     publications {
                         create<MavenPublication>("mavenJava") {
                             groupId = mod.group
-                            artifactId = mod.mixin
+                            artifactId = mod.idDashed
                             version = project.version.toString()
                             from(project.components["java"])
                         }
@@ -628,7 +628,7 @@ open class MultiLoader(private val project: Project) {
             val ft = project.extensions.getByType<FletchingTableExtension>()
 
             ft.accessConverter.register("main") {
-                add("${mod.mixin}.ct")
+                add("${mod.idDashed}.ct")
             }
         }
     }
@@ -640,7 +640,7 @@ open class MultiLoader(private val project: Project) {
 
         val changeMap = listOf(
             "id"            to mod.id,
-            "mixin"         to mod.mixin,
+            "mixin"         to mod.idDashed,
             "name"          to mod.name,
             "description"   to if (isFabric) mod.description.replace("\n", "\\n") else mod.description,
             "version"       to project.version,
@@ -670,7 +670,7 @@ open class MultiLoader(private val project: Project) {
 
     private fun configureGradle(pubStart: String) {
         project.extensions.getByType(BasePluginExtension::class.java).apply {
-            archivesName.set(mod.mixin)
+            archivesName.set(mod.idDashed)
         }
 
         project.version = "${mod.version}-${mod.loader}+$pubStart"
@@ -840,7 +840,7 @@ open class MultiLoader(private val project: Project) {
 
         if (mixinFile.exists()) mixinsKey.put(mixinFile.name)
 
-        if (isMainCTFileExist()) json.put("accessWidener", "${mod.mixin}.ct")
+        if (isMainCTFileExist()) json.put("accessWidener", "${mod.idDashed}.ct")
 
         if (iconFile.exists()) json.put("icon", "icon.png")
 
