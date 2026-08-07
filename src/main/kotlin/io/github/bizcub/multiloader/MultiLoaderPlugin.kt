@@ -341,7 +341,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun isMainCTFileExist(): Boolean {
-        return ctMainFile.exists()
+        return ctMainFile.exists() && ((isFabric && ctFabricFile.exists()) || (isForge && isForgeLegacy && ctForgeArchFile.exists()) || (isNeoForge && atNeoForgeFile.exists()))
     }
 
     fun getMinCompatVersion(version: String): String {
