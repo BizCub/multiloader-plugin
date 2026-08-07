@@ -23,6 +23,7 @@ import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.publish.maven.tasks.PublishToMavenLocal
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
@@ -703,6 +704,14 @@ open class MultiLoader(private val project: Project) {
                 doLast {
                     afterProcessResources()
                 }
+            }
+        }
+
+        project.gradle.taskGraph.whenReady {
+            val publishTasks = allTasks.filterIsInstance<PublishToMavenLocal>()
+
+            publishTasks.forEach { task ->
+                task.mustRunAfter(publishTasks.filter { it != task })
             }
         }
 
