@@ -84,8 +84,7 @@ open class MultiLoaderSettings {
         stonecutter.create(settings.rootProject) {
             pendingVersions.forEach { (ver, loaders) ->
                 loaders.forEach { loader ->
-                    val suffix = if (loader == fg && stonecutter.eval(ver, "<1.21")) ".arch" else ""
-                    version("$ver-$loader", ver).buildscript.set("buildscripts/$loader$suffix.gradle.kts")
+                    version("$ver-$loader", ver).buildscript.set("buildscripts/$loader.gradle.kts")
                 }
             }
         }
@@ -185,7 +184,6 @@ open class MultiLoader(private val project: Project) {
     val isFabric: Boolean get() = mod.loader == "fabric"
     val isForge: Boolean get() = mod.loader == "forge"
     val isNeoForge: Boolean get() = mod.loader == "neoforge"
-    val isForgeLegacy: Boolean get() = scp < "1.21"
     val isObfuscated: Boolean get() = scp < "26.1"
 
     val playerName: String get() = "BizarreCube"
@@ -341,7 +339,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     fun isMainCTFileExist(): Boolean {
-        return ctMainFile.exists() && ((isFabric && ctFabricFile.exists()) || (isForge && isForgeLegacy && ctForgeArchFile.exists()) || (isNeoForge && atNeoForgeFile.exists()))
+        return ctMainFile.exists() && ((isFabric && ctFabricFile.exists()) || (isForge && atForgeFile.exists()) || (isNeoForge && atNeoForgeFile.exists()))
     }
 
     fun getMinCompatVersion(version: String): String {
@@ -633,7 +631,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun access() {
-        if ((isForge && !isForgeLegacy) || isNeoForge) {
+        if (isForge || isNeoForge) {
             val ft = project.extensions.getByType<FletchingTableExtension>()
 
             ft.accessConverter.register("main") {
@@ -643,7 +641,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun generateModMetadata() {
-        val buildPath = if (!isForge || isForgeLegacy) buildResourcesDir else buildResourcesDirForge
+        val buildPath = if (!isForge) buildResourcesDir else buildResourcesDirForge
         buildPath.mkdirs()
         if (!isFabric) buildPath.resolve("META-INF").mkdirs()
 
@@ -809,10 +807,10 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun mixinConfigRegistration() {
-        val tomlFile = if (isForge && !isForgeLegacy)
-            buildResourcesDirForge.resolve("META-INF/mods.toml")
-        else {
+        val tomlFile = if (!isForge) {
             buildResourcesDir.resolve("META-INF/neoforge.mods.toml")
+        } else {
+            buildResourcesDirForge.resolve("META-INF/mods.toml")
         }
 
         if (!isForge && !isNeoForge || !tomlFile.exists()) return
