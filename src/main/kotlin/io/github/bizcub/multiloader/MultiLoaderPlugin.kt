@@ -10,6 +10,11 @@ import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
 import dev.kikugie.stonecutter.settings.StonecutterSettingsExtension
 import me.modmuss50.mpp.ModPublishExtension
 import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
+import net.fabricmc.loom.api.LoomGradleExtensionAPI
+import net.minecraftforge.gradle.ForgeGradleExtension
+import net.minecraftforge.gradle.MinecraftExtensionForProject
+import net.minecraftforge.renamer.gradle.RenamerExtension
+import net.neoforged.moddevgradle.dsl.NeoForgeExtension
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
 import org.gradle.api.Project
@@ -23,12 +28,12 @@ import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.provider.Provider
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
-import org.gradle.api.publish.maven.tasks.PublishToMavenLocal
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -37,6 +42,7 @@ import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import kotlin.text.get
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -84,7 +90,7 @@ open class MultiLoaderSettings {
         stonecutter.create(settings.rootProject) {
             pendingVersions.forEach { (ver, loaders) ->
                 loaders.forEach { loader ->
-                    version("$ver-$loader", ver).buildscript.set("buildscripts/$loader.gradle.kts")
+                    version("$ver-$loader", ver)
                 }
             }
         }
@@ -241,6 +247,9 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun afterEvaluate() {
+        configureFabric()
+        configureForge()
+        configureNeoForge()
         configureCommon()
         configureTasks()
     }
@@ -486,6 +495,8 @@ open class MultiLoader(private val project: Project) {
 
     private fun configureModPublication(pubStart: String, pubEnd: String) {
         if (getProp("version") == null) {
+            project.pluginManager.apply("me.modmuss50.mod-publish-plugin")
+
             project.extensions.configure<ModPublishExtension>("publishMods") {
                 fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
                 displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
@@ -632,6 +643,8 @@ open class MultiLoader(private val project: Project) {
 
     private fun access() {
         if (isForge || isNeoForge) {
+            project.pluginManager.apply("dev.kikugie.fletching-table")
+
             val ft = project.extensions.getByType<FletchingTableExtension>()
 
             ft.accessConverter.register("main") {
@@ -909,6 +922,120 @@ open class MultiLoader(private val project: Project) {
         project.dependencies {
             for (dep in deps) add(if (isFabric && isObfuscated) dep.modConfiguration else dep.configuration, dep.dependency) {
                 for (module in eModules) exclude(module.module)
+            }
+        }
+    }
+
+    private fun configureFabric() {
+        if (!isFabric) return
+
+        project.pluginManager.apply("fabric-loom")
+        val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
+
+        setBuiltFile(project.tasks.named<AbstractArchiveTask>(fabricJarTask).get().archiveFile)
+
+        project.dependencies {
+            "minecraft"("com.mojang:minecraft:${mod.mcExact}")
+            if (isObfuscated) "mappings"(loom.officialMojangMappings())
+        }
+
+        loom.apply {
+            if (isMainCTFileExist())
+                accessWidenerPath.set(ctFabricFile)
+
+            runConfigs {
+                getByName("client") {
+                    runDirectory.set(clientRunFile)
+                }
+                getByName("server") {
+                    runDirectory.set(serverRunFile)
+                }
+            }
+        }
+    }
+
+    private fun configureForge() {
+        if (!isForge) return
+
+        project.pluginManager.apply("net.minecraftforge.gradle")
+        project.pluginManager.apply("net.minecraftforge.renamer")
+
+        val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
+
+        project.repositories {
+            val fg = project.extensions.getByType<ForgeGradleExtension>()
+            minecraft.mavenizer(this)
+            maven(fg.forgeMaven)
+            maven(fg.minecraftLibsMaven)
+        }
+
+        project.dependencies {
+            "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
+            if (scp >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
+            if (scp < "1.20.5") "annotationProcessor"("org.spongepowered:mixin:0.8.7:processor")
+        }
+
+        if (scp < "1.20.5") {
+            project.extensions.configure<RenamerExtension>() {
+                mappings(minecraft.dependency.toSrg)
+                enableMixinRefmaps {
+                    config(mixinFile.name)
+                }
+                val renameJar = classes(project.tasks.named<Jar>("jar")) {
+                    archiveClassifier.set("srg")
+                    mappings(mixin.generatedMappings)
+                }
+
+                setBuiltFile(renameJar.flatMap { it.output })
+            }
+        } else {
+            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+        }
+
+        minecraft.apply {
+            mappings("official", mod.mc)
+            accessTransformers.from(atForgeFile)
+
+            runs {
+                register("client") {
+                    workingDir.set(clientRunFile)
+                }
+                register("server") {
+                    workingDir.set(serverRunFile)
+                }
+            }
+        }
+    }
+
+    private fun configureNeoForge() {
+        if (!isNeoForge) return
+
+        project.pluginManager.apply("net.neoforged.moddev")
+
+        setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+
+        project.extensions.configure<NeoForgeExtension> {
+            version = getDep("neoforge")
+
+            if (isMainCTFileExist())
+                accessTransformers.from(atNeoForgeFile)
+
+            mods {
+                register("main") { sourceSet(getSourceSets().named("main").get()) }
+            }
+
+            runs {
+                configureEach {
+                    disableIdeRun()
+                }
+                register("client") {
+                    gameDirectory.set(clientRunFile)
+                    client()
+                }
+                register("server") {
+                    gameDirectory.set(serverRunFile)
+                    server()
+                }
             }
         }
     }
