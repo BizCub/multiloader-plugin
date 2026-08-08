@@ -572,9 +572,11 @@ open class MultiLoader(private val project: Project) {
 
         fun definitionFileConfigurationName(resource: String, name: String, task: String = "") {
             val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
-            val task1 = task.ifEmpty {
+            var task1 = task.ifEmpty {
                 fileName.lowerCaseFirst()
             }
+
+            if (task1 == "publishToMavenLocal") task1 += " --no-parallel"
 
             val filePath = project.rootDir.resolve(".idea/runConfigurations")
             filePath.mkdirs()
@@ -591,17 +593,23 @@ open class MultiLoader(private val project: Project) {
             definitionFileConfigurationName("main", name, task)
         }
 
+        fun String.camelCaseToWords(): String {
+            return split(Regex("(?=[A-Z])")).joinToString(" ").substring(1)
+        }
+
         fun generateMultiplePublishConfigurations(list: List<String>, fileName: String) {
-            list.forEach { platform ->
+            val transformedList = list.map { it.camelCaseToWords() }
+
+            transformedList.forEach { platform ->
                 definitionFileConfigurationName(fileName, "0 Publish $platform Active")
             }
 
-            list.forEach { platform ->
+            transformedList.forEach { platform ->
                 definitionFileConfigurationName(fileName, "1 Publish $platform")
             }
 
             sc.versions.forEach { version ->
-                list.forEach { platform ->
+                transformedList.forEach { platform ->
                     definitionFileConfigurationName(fileName, "2 Publish $platform ${version.version}")
                 }
             }
@@ -704,14 +712,6 @@ open class MultiLoader(private val project: Project) {
                 doLast {
                     afterProcessResources()
                 }
-            }
-        }
-
-        project.gradle.taskGraph.whenReady {
-            val publishTasks = allTasks.filterIsInstance<PublishToMavenLocal>()
-
-            publishTasks.forEach { task ->
-                task.mustRunAfter(publishTasks.filter { it != task })
             }
         }
 
