@@ -32,6 +32,7 @@ import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.internal.DefaultTaskExecutionRequest
@@ -179,7 +180,6 @@ open class MultiLoader(private val project: Project) {
     val mixinFile: File get() = resourcesDir.resolve("${mod.idDashed}.mixins.json")
     val ctMainFile: File get() = resourcesDir.resolve("${mod.idDashed}.ct")
     val ctFabricFile: File get() = buildResourcesDir.resolve("${mod.idDashed}.ct")
-    val ctForgeArchFile: File get() = ctFabricFile
     val atForgeFile: File get() = buildResourcesDirForge.resolve("META-INF/accesstransformer.cfg")
     val atNeoForgeFile: File get() = buildResourcesDir.resolve("META-INF/accesstransformer.cfg")
 
@@ -191,10 +191,10 @@ open class MultiLoader(private val project: Project) {
     val isForge: Boolean get() = mod.loader == "forge"
     val isNeoForge: Boolean get() = mod.loader == "neoforge"
     val isObfuscated: Boolean get() = scp < "26.1"
+    val isForgeLegacy: Boolean get() = scp < "1.20.5"
 
     val playerName: String get() = "BizarreCube"
     val playerUUID: String get() = updateDependencies.getPlayerUUIDbyName(playerName)
-
     val fabricJarTask: String get() = if (!isObfuscated) "jar" else "remapJar"
 
     fun prop(key: String): String? = project.findProperty(key)?.toString()
@@ -384,6 +384,13 @@ open class MultiLoader(private val project: Project) {
 
     private fun getSourceSets(): SourceSetContainer {
         return project.extensions.getByType<SourceSetContainer>()
+    }
+
+    private fun getExtraSourceSet(): SourceSet? {
+        return if (getSourceSets().count() > 2)
+            getSourceSets() .first { it.name != "main" && it.name != "test" }
+        else
+            null
     }
 
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
@@ -713,9 +720,11 @@ open class MultiLoader(private val project: Project) {
                 into(project.rootDir.resolve("build/libs/${mod.version}"))
                 dependsOn("build")
             }
-            named<Jar>("jar") {
-                manifest {
-                    attributes["MixinConfigs"] = mixinFile.name
+            if (mixinFile.exists()) {
+                named<Jar>("jar") {
+                    manifest {
+                        attributes["MixinConfigs"] = mixinFile.name
+                    }
                 }
             }
             named<ProcessResources>("processResources") {
@@ -943,7 +952,15 @@ open class MultiLoader(private val project: Project) {
             if (isMainCTFileExist())
                 accessWidenerPath.set(ctFabricFile)
 
+            if (getExtraSourceSet() != null && isObfuscated)
+                createRemapConfigurations(getExtraSourceSet()!!)
+
             runConfigs {
+                if (getExtraSourceSet() != null) {
+                    configureEach {
+                        sourceSet = getExtraSourceSet()!!.name
+                    }
+                }
                 getByName("client") {
                     runDirectory.set(clientRunFile)
                 }
@@ -958,7 +975,6 @@ open class MultiLoader(private val project: Project) {
         if (!isForge) return
 
         project.pluginManager.apply("net.minecraftforge.gradle")
-        project.pluginManager.apply("net.minecraftforge.renamer")
 
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
 
@@ -972,10 +988,18 @@ open class MultiLoader(private val project: Project) {
         project.dependencies {
             "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
             if (scp >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
-            if (scp < "1.20.5") "annotationProcessor"("org.spongepowered:mixin:0.8.7:processor")
+            if (isForgeLegacy && mixinFile.exists()) "annotationProcessor"("org.spongepowered:mixin:0.8.7:processor")
         }
 
-        if (scp < "1.20.5") {
+        if (getExtraSourceSet() != null) {
+            getSourceSets()["main"].apply {
+                runtimeClasspath += getSourceSets()[getExtraSourceSet()!!.name].output
+            }
+        }
+
+        if (isForgeLegacy && mixinFile.exists()) {
+            project.pluginManager.apply("net.minecraftforge.renamer")
+
             project.extensions.configure<RenamerExtension>() {
                 mappings(minecraft.dependency.toSrg)
                 enableMixinRefmaps {
@@ -1022,6 +1046,9 @@ open class MultiLoader(private val project: Project) {
 
             mods {
                 register("main") { sourceSet(getSourceSets().named("main").get()) }
+                if (getExtraSourceSet() != null) {
+                    register(getExtraSourceSet()!!.name) { sourceSet(getSourceSets().named(getExtraSourceSet()!!.name).get()) }
+                }
             }
 
             runs {
