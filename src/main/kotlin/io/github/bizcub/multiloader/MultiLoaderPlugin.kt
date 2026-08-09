@@ -258,6 +258,7 @@ open class MultiLoader(private val project: Project) {
         generateModMetadata()
         mixinConfigRegistration()
         entrypointRegistration()
+        refmapRegister()
     }
 
     private fun afterFinishBuild() {
@@ -848,6 +849,21 @@ open class MultiLoader(private val project: Project) {
         mapper.writeValue(tomlFile, data)
     }
 
+    private fun refmapRegister() {
+        val buildBixinFile = buildResourcesDirForge.resolve(mixinFile.name)
+
+        if (!(isForge && isForgeLegacy && buildBixinFile.exists())) return
+
+        println(!(isForge && isForgeLegacy && buildBixinFile.exists()))
+
+        val jsonString = buildBixinFile.readText()
+        val json = JSONObject(jsonString)
+
+        json.put("refmap", "main.refmap.json")
+
+        buildBixinFile.writeText(json.toString(4))
+    }
+
     private fun entrypointRegistration() {
         val jsonFile = buildResourcesDir.resolve("fabric.mod.json")
 
@@ -1021,6 +1037,12 @@ open class MultiLoader(private val project: Project) {
             accessTransformers.from(atForgeFile)
 
             runs {
+                configureEach {
+                    mods {
+                        register("main")    { source(getSourceSets()["main"]) }
+                        register("testmod") { source(getExtraSourceSet()!!) }
+                    }
+                }
                 register("client") {
                     workingDir.set(clientRunFile)
                 }
@@ -1047,7 +1069,7 @@ open class MultiLoader(private val project: Project) {
             mods {
                 register("main") { sourceSet(getSourceSets().named("main").get()) }
                 if (getExtraSourceSet() != null) {
-                    register(getExtraSourceSet()!!.name) { sourceSet(getSourceSets().named(getExtraSourceSet()!!.name).get()) }
+                    register(getExtraSourceSet()!!.name) { sourceSet(getExtraSourceSet()) }
                 }
             }
 
