@@ -43,7 +43,6 @@ import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import kotlin.text.get
 
 fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
 fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
@@ -147,8 +146,8 @@ open class MultiLoader(private val project: Project) {
         val modrinth: String get() = modProp("modrinth")
         val curseforge: String get() = modProp("curseforge")
         val github: String get() = modProp("github")
-        val pubStart: String get() = propIf("pub-start", mc)
-        val pubEnd: String get() = propIf("pub-end", mc)
+        var pubStart: String = "not recorded"
+        var pubEnd: String = "not recorded"
     }
 
     class ClassInfo(val entrypointName: String, val classFilePath: String)
@@ -201,49 +200,26 @@ open class MultiLoader(private val project: Project) {
     fun modProp(key: String) = prop("mod.$key") as String
     fun getProp(key: String) = prop(propName(key))
     fun setProp(key: String, value: Any?) = value.also { project.extra[versionExactlyProp(key)] = it }
-    fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
-    fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
-    fun versionProp(key: String) = "${mod.mc}.$key"
-    fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
+
+    private fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
+    private fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
+    private fun versionProp(key: String) = "${mod.mc}.$key"
+    private fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
 
     fun firstInit() {
         createDepFile()
         setCustomProjectIcon()
         setStonecutterParameters()
+        updateOrCreateIssueTemplates()
+        setServerProperties()
     }
 
     fun init() {
-        setServerProperties()
         neoforgeFix()
         access()
         setProperties()
-        updateOrCreateIssueTemplates()
-
-        var pubStart = mod.pubStart
-        var pubEnd = mod.pubEnd
-
-        if (prop("multiloader.editPublishVersions") == "true") {
-            val publishVersionList = getPublishVersion(mod.mc)
-            pubStart = propIf("pub-start", publishVersionList.first())
-            pubEnd = propIf("pub-end", publishVersionList.last())
-        }
-
-        configureGradle(pubStart)
-        configureModPublication(pubStart, pubEnd)
         addTaskToQueue()
-
-        addDependency(repository = "api.modrinth.com/maven")
-        if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
-
-        project.afterEvaluate {
-            afterEvaluate()
-        }
-
-        project.gradle.projectsEvaluated {
-            if (project.name == sc.versions.last().project) {
-                afterFinishBuild()
-            }
-        }
+        configureInit()
     }
 
     private fun afterEvaluate() {
@@ -252,6 +228,7 @@ open class MultiLoader(private val project: Project) {
         configureNeoForge()
         configureCommon()
         configureTasks()
+        configureModPublication()
     }
 
     private fun afterProcessResources() {
@@ -303,6 +280,20 @@ open class MultiLoader(private val project: Project) {
 
     fun addEntrypoint(entrypointName: String, implementedClassName: String) {
         entrypoints.add(entrypointName to implementedClassName)
+    }
+
+    fun versionRange(
+        version: String,
+        from: String = "",
+        to: String = "",
+        loader: String = ""
+    ) {
+        val loader1 = if (loader.isEmpty()) "" else "-$loader"
+
+        if (!from.isEmpty())
+            project.extra["$version$loader1.pub-start"] = from
+        if (!to.isEmpty())
+            project.extra["$version$loader1.pub-end"] = to
     }
 
     fun addDependency(
@@ -501,13 +492,11 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private fun configureModPublication(pubStart: String, pubEnd: String) {
+    private fun configureModPublication() {
         if (getProp("version") == null) {
-            project.pluginManager.apply("me.modmuss50.mod-publish-plugin")
-
             project.extensions.configure<ModPublishExtension>("publishMods") {
                 fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
-                displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} $pubStart v${mod.version}")
+                displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
                 changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
                 version.set(project.version.toString())
                 val releaseType = when {
@@ -523,8 +512,8 @@ open class MultiLoader(private val project: Project) {
                     projectId.set(mod.modrinth)
                     accessToken.set(tokenDir("modrinth"))
                     minecraftVersionRange {
-                        start.set(pubStart)
-                        end.set(pubEnd)
+                        start.set(mod.pubStart)
+                        end.set(mod.pubEnd)
                         includeSnapshots.set(true)
                     }
                 }
@@ -532,8 +521,8 @@ open class MultiLoader(private val project: Project) {
                     projectId.set(mod.curseforge)
                     accessToken.set(tokenDir("curseforge"))
                     minecraftVersionRange {
-                        start.set(pubStart)
-                        end.set(pubEnd)
+                        start.set(mod.pubStart)
+                        end.set(mod.pubEnd)
                     }
                 }
                 github {
@@ -696,12 +685,12 @@ open class MultiLoader(private val project: Project) {
         if (isNeoForge) process("neoforge.mods.toml", "META-INF")
     }
 
-    private fun configureGradle(pubStart: String) {
+    private fun configureInit() {
+        project.pluginManager.apply("me.modmuss50.mod-publish-plugin")
+
         project.extensions.getByType(BasePluginExtension::class.java).apply {
             archivesName.set(mod.idDashed)
         }
-
-        project.version = "${mod.version}-${mod.loader}+$pubStart"
 
         project.tasks {
             fun registerMultipleTasks(list: List<String>) {
@@ -748,6 +737,19 @@ open class MultiLoader(private val project: Project) {
             sourceCompatibility = javaVersion
             targetCompatibility = javaVersion
             toolchain.languageVersion.set(JavaLanguageVersion.of(javaSCNumber))
+        }
+
+        addDependency(repository = "api.modrinth.com/maven")
+        if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
+
+        project.afterEvaluate {
+            afterEvaluate()
+        }
+
+        project.gradle.projectsEvaluated {
+            if (project.name == sc.versions.last().project) {
+                afterFinishBuild()
+            }
         }
     }
 
@@ -854,8 +856,6 @@ open class MultiLoader(private val project: Project) {
 
         if (!(isForge && isForgeLegacy && buildBixinFile.exists())) return
 
-        println(!(isForge && isForgeLegacy && buildBixinFile.exists()))
-
         val jsonString = buildBixinFile.readText()
         val json = JSONObject(jsonString)
 
@@ -939,6 +939,17 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureCommon() {
+        mod.pubStart = propIf("pub-start", mod.mc)
+        mod.pubEnd = propIf("pub-end", mod.mc)
+
+        if (prop("multiloader.editPublishVersions") == "true") {
+            val publishVersionList = getPublishVersion(mod.mc)
+            mod.pubStart = propIf("pub-start", publishVersionList.first())
+            mod.pubEnd = propIf("pub-end", publishVersionList.last())
+        }
+
+        project.version = "${mod.version}-${mod.loader}+${mod.pubStart}"
+
         project.repositories {
             for (rep in reps) maven(rep.repository)
             mavenLocal()
