@@ -1027,7 +1027,7 @@ open class MultiLoader(private val project: Project) {
         if (isForgeLegacy && mixinFile.exists()) {
             project.pluginManager.apply("net.minecraftforge.renamer")
 
-            project.extensions.configure<RenamerExtension>() {
+            project.extensions.configure<RenamerExtension> {
                 mappings(minecraft.dependency.toSrg)
                 enableMixinRefmaps {
                     config(mixinFile.name)
@@ -1050,8 +1050,9 @@ open class MultiLoader(private val project: Project) {
             runs {
                 configureEach {
                     mods {
-                        register("main")    { source(getSourceSets()["main"]) }
-                        register("testmod") { source(getExtraSourceSet()!!) }
+                        register("main") { source(getSourceSets()["main"]) }
+                        if (getExtraSourceSet() != null)
+                            register("testmod") { source(getExtraSourceSet()!!) }
                     }
                 }
                 register("client") {
