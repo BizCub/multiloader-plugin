@@ -742,6 +742,13 @@ open class MultiLoader(private val project: Project) {
         addDependency(repository = "api.modrinth.com/maven")
         if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
 
+        sc.swaps["cloth_config_id"] = when {
+            (isFabric && scp >= "1.18") || (isForge && scp < "1.17") -> "cloth-config"
+            (isForge && scp >= "1.17") || isNeoForge ->                 "cloth_config"
+            isFabric && scp < "1.18" ->                                 "cloth-config2"
+            else ->                                                     "not exist"
+        }.let { "\"$it\"" }
+
         project.afterEvaluate {
             afterEvaluate()
         }
@@ -760,7 +767,7 @@ open class MultiLoader(private val project: Project) {
                 val (version, loader) = current.project.split('-', limit = 2)
                 properties.tags(version, loader)
                 constants.match(node.metadata.project.substringAfterLast('-'), "fabric", "neoforge", "forge")
-                swaps["mod_id"] = "\"${project.property("mod.id")}\";"
+                swaps["mod_id"] = "\"${modProp("id")}\";"
 
                 val map = linkedMapOf<String, Int>()
                 map["accessWidener"] = 2
