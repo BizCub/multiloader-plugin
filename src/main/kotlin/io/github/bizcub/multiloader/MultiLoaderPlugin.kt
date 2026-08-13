@@ -1032,17 +1032,21 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
-        if (isForgeLegacy && mixinFile.exists()) {
+        if (isForgeLegacy) {
             project.pluginManager.apply("net.minecraftforge.renamer")
 
             project.extensions.configure<RenamerExtension> {
                 mappings(minecraft.dependency.toSrg)
-                enableMixinRefmaps {
-                    config(mixinFile.name)
+
+                if (mixinFile.exists()) {
+                    enableMixinRefmaps {
+                        config(mixinFile.name)
+                    }
                 }
+
                 val renameJar = classes(project.tasks.named<Jar>("jar")) {
                     archiveClassifier.set("srg")
-                    mappings(mixin.generatedMappings)
+                    if (mixinFile.exists()) mappings(mixin.generatedMappings)
                 }
 
                 setBuiltFile(renameJar.flatMap { it.output })
