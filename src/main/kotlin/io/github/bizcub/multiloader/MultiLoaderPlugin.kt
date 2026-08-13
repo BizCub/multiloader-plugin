@@ -851,7 +851,8 @@ open class MultiLoader(private val project: Project) {
         val data = mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
 
         val mods = data.getOrPut("mods") { mutableListOf<MutableMap<String, Any>>() } as MutableList<MutableMap<String, Any>>
-        if (iconFile.exists()) mods[0]["logoFile"] = "icon.png"
+        val iconKey = if (isNeoForge && scp >= "26.2") "iconFile" else "logoFile"
+        if (iconFile.exists()) mods[0][iconKey] = "icon.png"
 
         if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
 
