@@ -229,9 +229,6 @@ open class MultiLoader(private val project: Project) {
         configureCommon()
         configureTasks()
         configureModPublication()
-    }
-
-    private fun afterProcessResources() {
         generateModMetadata()
         mixinConfigRegistration()
         entrypointRegistration()
@@ -715,12 +712,6 @@ open class MultiLoader(private val project: Project) {
                     manifest {
                         attributes["MixinConfigs"] = mixinFile.name
                     }
-                }
-            }
-            named<ProcessResources>("processResources") {
-                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-                doLast {
-                    afterProcessResources()
                 }
             }
         }
