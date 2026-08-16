@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bizcub"
-version = "0.8.8"
+version = "0.8.9"
 
 tasks.jar {
     manifest {
@@ -23,7 +23,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("dev.kikugie:stonecutter:0.9.7")
+    implementation("dev.kikugie:stonecutter:0.9.7")
     implementation("me.modmuss50:mod-publish-plugin:2.2.0")
     implementation("dev.kikugie:fletching-table:0.1.0-alpha.23")
 

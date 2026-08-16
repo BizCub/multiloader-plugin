@@ -53,6 +53,8 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
 
         when (project) {
             is Settings -> {
+                project.pluginManager.apply("dev.kikugie.stonecutter")
+
                 val multiloader = project.extensions.create("multiloader", MultiLoaderSettings::class.java)
 
                 Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
