@@ -39,6 +39,7 @@ import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
+import org.gradle.kotlin.dsl.named
 import org.gradle.language.jvm.tasks.ProcessResources
 import org.json.JSONArray
 import org.json.JSONObject
@@ -234,6 +235,9 @@ open class MultiLoader(private val project: Project) {
         generateModMetadata()
         mixinConfigRegistration()
         entrypointRegistration()
+    }
+
+    private fun afterProcessResources() {
         refmapRegister()
     }
 
@@ -716,6 +720,17 @@ open class MultiLoader(private val project: Project) {
                     }
                 }
             }
+            named<ProcessResources>("processResources") {
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+                doLast {
+                    afterProcessResources()
+                }
+            }
+            named<Jar>("jar") {
+                doFirst {
+                    afterProcessResources()
+                }
+            }
         }
 
         project.configure<JavaPluginExtension> {
@@ -853,16 +868,16 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun refmapRegister() {
-        val buildBixinFile = buildResourcesDirForge.resolve(mixinFile.name)
+        val buildMixinFile = buildResourcesDirForge.resolve(mixinFile.name)
 
-        if (!(isForge && isForgeLegacy && buildBixinFile.exists())) return
+        if (!(isForge && isForgeLegacy && buildMixinFile.exists())) return
 
-        val jsonString = buildBixinFile.readText()
+        val jsonString = buildMixinFile.readText()
         val json = JSONObject(jsonString)
 
         json.put("refmap", "main.refmap.json")
 
-        buildBixinFile.writeText(json.toString(4))
+        buildMixinFile.writeText(json.toString(4))
     }
 
     private fun entrypointRegistration() {
@@ -900,7 +915,7 @@ open class MultiLoader(private val project: Project) {
 
         val result = mutableListOf<ClassInfo>()
 
-        project.rootProject.rootDir.resolve("src/main/java").walkTopDown()
+        buildDir.resolve("generated/stonecutter").walkTopDown()
             .filter { it.isFile && it.extension == "java" }
             .forEach { file ->
                 val cu = StaticJavaParser.parse(file)
