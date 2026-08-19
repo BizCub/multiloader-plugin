@@ -330,8 +330,8 @@ open class MultiLoader(private val project: Project) {
         excludedModules.forEach { module -> eModules.add(Module(module)) }
     }
 
-    fun getDep(key: String): String {
-        val dep = updateDependencies.getDep(key)
+    fun getDep(key: String, useId: Boolean = false): String {
+        val dep = updateDependencies.getDep(key, useId)
 
         if (key == "fabric") {
             project.configurations.all {

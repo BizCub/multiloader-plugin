@@ -16,7 +16,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     val file = filePath.resolve("dependencies.json")
     val isUpdateEnabled = ml.prop("multiloader.enableDependenciesUpdate") == "true"
 
-    fun getDep(key: String): String {
+    fun getDep(key: String, useId: Boolean = false): String {
 
         fun downloadDependency(message: String): String {
             println("[Multiloader] Downloading dependency '$key'$message ...")
@@ -34,7 +34,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
                 addToConfig("loader", neoForge)
                 return neoForge
             } else {
-                val version = getLastModrinthVersion(key)
+                val version = getLastModrinthVersion(key, useId)
                 if (version != "not_found") {
                     addToConfig(key, version)
                     return version
@@ -54,7 +54,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         }
     }
 
-    fun getLastModrinthVersion(id: String): String {
+    fun getLastModrinthVersion(id: String, useId: Boolean = false): String {
         val json = JSONArray(URL("https://api.modrinth.com/v2/project/$id/version").readText())
 
         fun checkAppropriateVersions(gameVersion: String): Boolean {
@@ -71,7 +71,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             obj.getJSONArray("game_versions").forEach { gameVersion ->
                 obj.getJSONArray("loaders").forEach { loader ->
                     if (checkAppropriateVersions(gameVersion.toString()) && loader == mod.loader) {
-                        return obj.getString("version_number")
+                        return if (useId) obj.getString("id") else obj.getString("version_number")
                     }
                 }
             }
