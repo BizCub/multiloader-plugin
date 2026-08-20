@@ -918,37 +918,45 @@ open class MultiLoader(private val project: Project) {
         buildDir.resolve("generated/stonecutter").walkTopDown()
             .filter { it.isFile && it.extension == "java" }
             .forEach { file ->
-                val cu = StaticJavaParser.parse(file)
-                val pkg = cu.packageDeclaration.map { it.name.asString() }.orElse("")
+                try {
+                    val cu = StaticJavaParser.parse(file)
+                    val pkg = cu.packageDeclaration.map { it.name.asString() }.orElse("")
 
-                val imports = cu.imports
-                    .filter { !it.isStatic }
-                    .associate { it.name.asString().substringAfterLast('.') to it.name.asString() }
+                    val imports = cu.imports
+                        .filter { !it.isStatic }
+                        .associate { it.name.asString().substringAfterLast('.') to it.name.asString() }
 
-                fun resolveType(typeName: String): String =
-                    if (typeName.contains('.')) typeName
-                    else imports[typeName] ?: if (pkg.isNotEmpty()) "$pkg.$typeName" else typeName
+                    fun resolveType(typeName: String): String =
+                        if (typeName.contains('.')) typeName
+                        else imports[typeName] ?: if (pkg.isNotEmpty()) "$pkg.$typeName" else typeName
 
-                fun fullClassName(cls: ClassOrInterfaceDeclaration): String {
-                    val names = mutableListOf<String>()
-                    var c: ClassOrInterfaceDeclaration? = cls
-                    while (c != null) {
-                        names.add(0, c.nameAsString)
-                        c = c.parentNode.orElse(null) as? ClassOrInterfaceDeclaration
-                    }
-                    val classPart = names.joinToString("$")
-                    return if (pkg.isNotEmpty()) "$pkg.$classPart" else classPart
-                }
-
-                cu.findAll(ClassOrInterfaceDeclaration::class.java)
-                    .filter { !it.isInterface }
-                    .mapNotNull { cls ->
-                        val implemented = cls.implementedTypes.map { resolveType(it.nameWithScope) }
-                        entrypoints.firstOrNull { it.second in implemented }?.let { (entryName, _) ->
-                            ClassInfo(entryName, fullClassName(cls))
+                    fun fullClassName(cls: ClassOrInterfaceDeclaration): String {
+                        val names = mutableListOf<String>()
+                        var c: ClassOrInterfaceDeclaration? = cls
+                        while (c != null) {
+                            names.add(0, c.nameAsString)
+                            c = c.parentNode.orElse(null) as? ClassOrInterfaceDeclaration
                         }
+                        val classPart = names.joinToString("$")
+                        return if (pkg.isNotEmpty()) "$pkg.$classPart" else classPart
                     }
-                    .forEach { result.add(it) }
+
+                    cu.findAll(ClassOrInterfaceDeclaration::class.java)
+                        .filter { !it.isInterface }
+                        .mapNotNull { cls ->
+                            val implemented = cls.implementedTypes.map { resolveType(it.nameWithScope) }
+                            entrypoints.firstOrNull { it.second in implemented }?.let { (entryName, _) ->
+                                ClassInfo(entryName, fullClassName(cls))
+                            }
+                        }
+                        .forEach { result.add(it) }
+                } catch (e: Exception) {
+                    val shortMessage = e.message
+                        ?.substringBefore("Problem stacktrace :")
+                        ?.trim()
+                        ?: e.javaClass.simpleName
+                    project.logger.warn("Multiloader: failed to parse Java source '${file.path}', skipping it: $shortMessage")
+                }
             }
 
         return result
