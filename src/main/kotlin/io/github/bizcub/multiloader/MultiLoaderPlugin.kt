@@ -915,7 +915,7 @@ open class MultiLoader(private val project: Project) {
 
         val result = mutableListOf<ClassInfo>()
 
-        buildDir.resolve("generated/stonecutter").walkTopDown()
+        buildDir.resolve("generated/stonecutter/main").walkTopDown()
             .filter { it.isFile && it.extension == "java" }
             .forEach { file ->
                 try {
