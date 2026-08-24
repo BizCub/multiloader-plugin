@@ -214,6 +214,8 @@ open class MultiLoader(private val project: Project) {
         setCustomProjectIcon()
         setStonecutterParameters()
         updateOrCreateIssueTemplates()
+        updateOrCreateChangelogFile()
+        updateOrCreateGitIgnoreFile()
         setServerProperties()
     }
 
@@ -641,10 +643,19 @@ open class MultiLoader(private val project: Project) {
         issueConfigFile.writeText(getResource("issueTemplate/config.yml"))
     }
 
+    private fun updateOrCreateChangelogFile() {
+        val changelogFile = project.rootDir.resolve("CHANGELOG.md")
+        changelogFile.createNewFile()
+    }
+
+    private fun updateOrCreateGitIgnoreFile() {
+        val gitIgnoreFile = project.rootDir.resolve(".gitignore")
+        gitIgnoreFile.writeText(getResource("mainFiles/gitignore.txt"))
+    }
+
     private fun access() {
         if (isForge || isNeoForge) {
             project.pluginManager.apply("dev.kikugie.fletching-table")
-
             val ft = project.extensions.getByType<FletchingTableExtension>()
 
             ft.accessConverter.register("main") {
