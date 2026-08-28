@@ -295,9 +295,9 @@ open class MultiLoader(private val project: Project) {
     ) {
         val loader1 = if (loader.isEmpty()) "" else "-$loader"
 
-        if (!from.isEmpty())
+        if (from.isNotEmpty())
             project.extra["$version$loader1.pub-start"] = from
-        if (!to.isEmpty())
+        if (to.isNotEmpty())
             project.extra["$version$loader1.pub-end"] = to
     }
 
@@ -330,6 +330,14 @@ open class MultiLoader(private val project: Project) {
             )
         }
         excludedModules.forEach { module -> eModules.add(Module(module)) }
+    }
+
+    fun getSimpleConfigLibDep(version: String = ""): String {
+        return if (version.isEmpty()) {
+            "maven.modrinth:simple-config-lib:${getDep("simple-config-lib")}"
+        } else {
+            "io.github.bizcub:simple-config-lib:${version}-${mod.loader}+${mod.mc}"
+        }
     }
 
     fun getDep(key: String, useId: Boolean = false): String {
