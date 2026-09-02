@@ -13,6 +13,7 @@ import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import net.fabricmc.loom.api.LoomGradleExtensionAPI
 import net.minecraftforge.gradle.ForgeGradleExtension
 import net.minecraftforge.gradle.MinecraftExtensionForProject
+import net.minecraftforge.jarjar.gradle.JarJarExtension
 import net.minecraftforge.renamer.gradle.RenamerExtension
 import net.neoforged.moddevgradle.dsl.NeoForgeExtension
 import org.gradle.api.JavaVersion
@@ -1048,6 +1049,20 @@ open class MultiLoader(private val project: Project) {
 
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
 
+        val enableMixinExtras = prop("multiloader.enableMixinExtrasForLegacyForge") == "true"
+
+        if (enableMixinExtras) {
+            project.pluginManager.apply("net.minecraftforge.jarjar")
+
+            project.extensions.configure<JarJarExtension> {
+                register("jarJar")
+            }
+        }
+
+        fun getMixinExtraDep(loader: String): String {
+            return "io.github.llamalad7:mixinextras-$loader:0.5.3"
+        }
+
         project.repositories {
             val fg = project.extensions.getByType<ForgeGradleExtension>()
             minecraft.mavenizer(this)
@@ -1059,6 +1074,11 @@ open class MultiLoader(private val project: Project) {
             "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
             if (scp >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
             if (isForgeLegacy && mixinFile.exists()) "annotationProcessor"("org.spongepowered:mixin:0.8.7:processor")
+            if (enableMixinExtras && scp < "1.21.10") {
+                "compileOnly"("annotationProcessor"(getMixinExtraDep("common"))!!)
+                "runtimeOnly"(getMixinExtraDep("forge"))
+                "jarJar"(getMixinExtraDep("forge"))
+            }
         }
 
         if (getExtraSourceSet() != null) {
@@ -1067,8 +1087,12 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
+        val jarTask = if (!enableMixinExtras) "jar" else "jarJar"
+
         if (isForgeLegacy) {
             project.pluginManager.apply("net.minecraftforge.renamer")
+
+            val taskProviderJar = project.tasks.named<org.gradle.api.tasks.bundling.Jar>(jarTask)
 
             project.extensions.configure<RenamerExtension> {
                 mappings(minecraft.dependency.toSrg)
@@ -1076,18 +1100,20 @@ open class MultiLoader(private val project: Project) {
                 if (mixinFile.exists()) {
                     enableMixinRefmaps {
                         config(mixinFile.name)
+                        jar(taskProviderJar)
                     }
                 }
 
-                val renameJar = classes(project.tasks.named<Jar>("jar")) {
+                val renameJar = classes(taskProviderJar) {
                     archiveClassifier.set("srg")
-                    if (mixinFile.exists()) mappings(mixin.generatedMappings)
+                    if (mixinFile.exists())
+                        mappings(mixin.generatedMappings)
                 }
 
                 setBuiltFile(renameJar.flatMap { it.output })
             }
         } else {
-            setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
+            setBuiltFile(project.tasks.named<Jar>(jarTask).get().archiveFile)
         }
 
         minecraft.apply {
