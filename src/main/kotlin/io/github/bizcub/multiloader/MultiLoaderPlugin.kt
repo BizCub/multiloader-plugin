@@ -165,7 +165,9 @@ open class MultiLoader(private val project: Project) {
         Pair("0 Run Server", "runActiveServer"),
         Pair("1 Build Active", "buildActive"),
         Pair("1 Build All", "buildAndCollect"),
-        Pair("1 Remove Keys", "removeDependencyKeys")
+        Pair("1 Remove Keys", "removeDependencyKeys"),
+        Pair("1 Clear Cache", "clearCache"),
+        Pair("1 Remove Unused", "removeUnusedVersions")
     )
     private val entrypoints = mutableListOf(
         "client" to "net.fabricmc.api.ClientModInitializer",
@@ -741,6 +743,18 @@ open class MultiLoader(private val project: Project) {
                         removeDependencyKeys()
                     }
                 }
+                register("clearCache") {
+                    group = "multiloader"
+                    doLast {
+                        clearCache()
+                    }
+                }
+                register("removeUnusedVersions") {
+                    group = "multiloader"
+                    doLast {
+                        removeUnusedVersions()
+                    }
+                }
             }
             if (mixinFile.exists()) {
                 named<Jar>("jar") {
@@ -884,6 +898,15 @@ open class MultiLoader(private val project: Project) {
             .filter { it.isNotEmpty() }
 
         updateDependencies.removeKeysFromConfig(keys)
+    }
+
+    private fun clearCache() {
+        updateDependencies.clearCache()
+    }
+
+    private fun removeUnusedVersions() {
+        val usedVersions = sc.versions.map { it.version }.distinct()
+        updateDependencies.removeUnusedVersions(usedVersions)
     }
 
     private fun mixinConfigRegistration() {

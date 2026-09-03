@@ -261,6 +261,45 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         }
     }
 
+    fun clearCache() {
+        if (!file.exists() || !file.isFile) {
+            project.logger.lifecycle("[Multiloader] Cache file not found, nothing to clear.")
+            return
+        }
+        file.writeText("{}")
+        project.logger.lifecycle("[Multiloader] Cache cleared: ${file.path}")
+    }
+
+    fun removeUnusedVersions(usedVersions: List<String>) {
+        if (!file.exists() || !file.isFile || file.readText().isEmpty()) {
+            project.logger.lifecycle("[Multiloader] dependencies.json not found or empty, nothing to remove.")
+            return
+        }
+
+        val root = try {
+            JSONObject(file.readText())
+        } catch (e: Exception) {
+            throw IOException(e)
+        }
+
+        val removed = mutableListOf<String>()
+
+        for (versionKey in root.keySet().toList()) {
+            if (versionKey !in usedVersions) {
+                root.remove(versionKey)
+                removed.add(versionKey)
+            }
+        }
+
+        file.writeText(root.toString(4))
+
+        if (removed.isEmpty()) {
+            project.logger.lifecycle("[Multiloader] No unused versions found.")
+        } else {
+            project.logger.lifecycle("[Multiloader] Removed unused versions:\n${removed.joinToString("\n") { "    $it" }}")
+        }
+    }
+
     fun createDepFile() {
         filePath.mkdirs()
         file.createNewFile()
