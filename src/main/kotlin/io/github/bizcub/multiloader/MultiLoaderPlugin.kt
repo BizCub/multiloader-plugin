@@ -165,9 +165,10 @@ open class MultiLoader(private val project: Project) {
         Pair("0 Run Server", "runActiveServer"),
         Pair("1 Build Active", "buildActive"),
         Pair("1 Build All", "buildAndCollect"),
-        Pair("1 Remove Keys", "removeDependencyKeys"),
-        Pair("1 Clear Cache", "clearCache"),
-        Pair("1 Remove Unused", "removeUnusedVersions")
+
+        Pair("0 Remove Keys", "removeDependencyKeys"),
+        Pair("0 Clear Cache", "clearCache"),
+        Pair("0 Remove Unused", "removeUnusedVersions")
     )
     private val entrypoints = mutableListOf(
         "client" to "net.fabricmc.api.ClientModInitializer",
@@ -593,7 +594,7 @@ open class MultiLoader(private val project: Project) {
             .listFiles { it.extension == "xml" && it.name.startsWith("Multiloader_")}
             ?.forEach(File::delete)
 
-        fun definitionFileConfigurationName(resource: String, name: String, task: String = "") {
+        fun definitionFileConfigurationName(name: String, task: String = "", folderName: String = "") {
             val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
             var task1 = task.ifEmpty {
                 fileName.lowerCaseFirst()
@@ -604,43 +605,49 @@ open class MultiLoader(private val project: Project) {
             val filePath = project.rootDir.resolve(".idea/runConfigurations")
             filePath.mkdirs()
 
+            val folderAttr = if (folderName.isEmpty()) "" else " folderName=\"$folderName\""
+
             val file = filePath.resolve("Multiloader_$fileName.xml")
             file.createNewFile()
-            file.writeText(getResource("runConfiguration/$resource.xml")
+            file.writeText(getResource("runConfiguration/main.xml")
                 .replace("%NAME%", name)
                 .replace("%TASK%", task1)
+                .replace("%FOLDER%", folderAttr)
             )
         }
 
+        val cacheTasks = listOf("removeDependencyKeys", "clearCache", "removeUnusedVersions")
+
         mainTasks.forEach { (name, task) ->
-            definitionFileConfigurationName("main", name, task)
+            val folder = if (task in cacheTasks) "Cache" else ""
+            definitionFileConfigurationName(name, task, folder)
         }
 
         fun String.camelCaseToWords(): String {
             return split(Regex("(?=[A-Z])")).joinToString(" ").substring(1)
         }
 
-        fun generateMultiplePublishConfigurations(list: List<String>, fileName: String) {
+        fun generateMultiplePublishConfigurations(list: List<String>, folderName: String) {
             val transformedList = list.map { it.camelCaseToWords() }
 
             transformedList.forEach { platform ->
-                definitionFileConfigurationName(fileName, "0 Publish $platform Active")
+                definitionFileConfigurationName("0 Publish $platform Active", folderName = folderName)
             }
 
             transformedList.forEach { platform ->
-                definitionFileConfigurationName(fileName, "1 Publish $platform")
+                definitionFileConfigurationName("1 Publish $platform", folderName = folderName)
             }
 
             sc.versions.forEach { version ->
                 transformedList.forEach { platform ->
-                    definitionFileConfigurationName(fileName, "2 Publish $platform ${version.version}")
+                    definitionFileConfigurationName("2 Publish $platform ${version.version}", folderName = folderName)
                 }
             }
         }
 
-        generateMultiplePublishConfigurations(publishPlatforms, "publishPlatform")
+        generateMultiplePublishConfigurations(publishPlatforms, "Publish Platform")
         if (prop("multiloader.enablePublishToMaven") == "true") {
-            generateMultiplePublishConfigurations(publishMaven, "publishMaven")
+            generateMultiplePublishConfigurations(publishMaven, "Publish Maven")
         }
     }
 
