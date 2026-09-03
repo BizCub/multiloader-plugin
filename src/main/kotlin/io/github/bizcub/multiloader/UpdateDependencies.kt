@@ -208,6 +208,59 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         }
     }
 
+    fun removeKeysFromConfig(keys: List<String>) {
+        if (keys.isEmpty()) {
+            project.logger.lifecycle("[Multiloader] No keys provided, nothing to remove.")
+            return
+        }
+        if (!file.exists() || !file.isFile || file.readText().isEmpty()) {
+            project.logger.lifecycle("[Multiloader] dependencies.json not found or empty, nothing to remove.")
+            return
+        }
+
+        val root = try {
+            JSONObject(file.readText())
+        } catch (e: Exception) {
+            throw IOException(e)
+        }
+
+        val removed = mutableListOf<String>()
+
+        fun matches(pattern: String, versionKey: String, loaderKey: String, innerKey: String): Boolean {
+            return pattern == innerKey ||
+                    pattern == "$loaderKey.$innerKey" ||
+                    pattern == "$versionKey.$loaderKey.$innerKey"
+        }
+
+        for (versionKey in root.keySet().toList()) {
+            val versionValue = root.opt(versionKey)
+            if (versionValue is JSONObject) {
+                for (loaderKey in versionValue.keySet().toList()) {
+                    val loaderValue = versionValue.opt(loaderKey)
+                    if (loaderValue is JSONObject) {
+                        for (innerKey in loaderValue.keySet().toList()) {
+                            if (keys.any { matches(it, versionKey, loaderKey, innerKey) }) {
+                                val value = loaderValue.opt(innerKey)?.toString().orEmpty()
+                                loaderValue.remove(innerKey)
+                                removed.add("$versionKey.$loaderKey.$innerKey = $value")
+                            }
+                        }
+                        if (loaderValue.isEmpty) versionValue.remove(loaderKey)
+                    }
+                }
+                if (versionValue.isEmpty) root.remove(versionKey)
+            }
+        }
+
+        file.writeText(root.toString(4))
+
+        if (removed.isEmpty()) {
+            project.logger.lifecycle("[Multiloader] No matching keys found: ${keys.joinToString(", ")}")
+        } else {
+            project.logger.lifecycle("[Multiloader] Removed keys:\n${removed.joinToString("\n") { "    $it" }}")
+        }
+    }
+
     fun createDepFile() {
         filePath.mkdirs()
         file.createNewFile()
