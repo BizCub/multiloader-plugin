@@ -929,8 +929,8 @@ open class MultiLoader(private val project: Project) {
         val data = mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
 
         val mods = data.getOrPut("mods") { mutableListOf<MutableMap<String, Any>>() } as MutableList<MutableMap<String, Any>>
-        val iconKey = if (isNeoForge && scp >= "26.2") "iconFile" else "logoFile"
-        if (iconFile.exists()) mods[0][iconKey] = "icon.png"
+        if (iconFile.exists()) mods[0]["logoFile"] = "icon.png"
+        if (iconFile.exists() && isNeoForge) mods[0]["iconFile"] = "icon.png"
 
         if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
 
@@ -1100,6 +1100,7 @@ open class MultiLoader(private val project: Project) {
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
 
         val enableMixinExtras = prop("multiloader.enableMixinExtrasForLegacyForge") == "true"
+        val isMixinExtrasIncluded = scp >= "1.21.10"
 
         if (enableMixinExtras) {
             project.pluginManager.apply("net.minecraftforge.jarjar")
@@ -1124,7 +1125,7 @@ open class MultiLoader(private val project: Project) {
             "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
             if (scp >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
             if (isForgeLegacy && mixinFile.exists()) "annotationProcessor"("org.spongepowered:mixin:0.8.7:processor")
-            if (enableMixinExtras && scp < "1.21.10") {
+            if (enableMixinExtras && !isMixinExtrasIncluded) {
                 "compileOnly"("annotationProcessor"(getMixinExtraDep("common"))!!)
                 "runtimeOnly"(getMixinExtraDep("forge"))
                 "jarJar"(getMixinExtraDep("forge"))
@@ -1137,7 +1138,7 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
-        val jarTask = if (!enableMixinExtras) "jar" else "jarJar"
+        val jarTask = if (!enableMixinExtras || isMixinExtrasIncluded) "jar" else "jarJar"
 
         if (isForgeLegacy) {
             project.pluginManager.apply("net.minecraftforge.renamer")
