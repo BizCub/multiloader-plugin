@@ -515,7 +515,7 @@ open class MultiLoader(private val project: Project) {
             project.extensions.configure<ModPublishExtension>("publishMods") {
                 fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
                 displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
-                changelog.set(project.rootDir.resolve("CHANGELOG.md").readText())
+                changelog.set(processChangelog())
                 version.set(project.version.toString())
                 val releaseType = when {
                     mod.version.contains("-beta.") -> BETA
@@ -587,6 +587,27 @@ open class MultiLoader(private val project: Project) {
         if (isForge && scp > "1.21.3") {
             setProp("cloth-config", "17.0.144")
         }
+    }
+
+    private fun processChangelog(): String {
+        val text = project.rootDir.resolve("CHANGELOG.md").readText()
+
+        val lines = text.trimEnd().lines()
+        if (lines.isEmpty()) return text
+
+        val lastLine = lines.last().trim()
+
+        val idRegex = Regex("^[A-Za-z0-9_-]{11}$")
+        if (!idRegex.matches(lastLine)) return text
+
+        val videoBlock = """  
+        **▼ Click below to watch the video review on YouTube ▼**  
+  
+        [![preview](https://img.youtube.com/vi/$lastLine/maxresdefault.jpg)](https://www.youtube.com/watch?v=$lastLine)  
+        """.trimIndent()
+
+        val withoutId = lines.dropLast(1).joinToString("\n").trimEnd()
+        return if (withoutId.isEmpty()) videoBlock else "$withoutId\n\n$videoBlock"
     }
 
     private fun createRunConfiguration() {
