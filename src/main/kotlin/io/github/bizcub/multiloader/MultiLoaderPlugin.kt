@@ -828,6 +828,21 @@ open class MultiLoader(private val project: Project) {
             else ->                                                     "not exist"
         }.let { "\"$it\"" }
 
+        project.gradle.taskGraph.whenReady {
+            if (project.rootProject.extra.has("multiloader.publishCheckDone")) return@whenReady
+
+            val hasPublishTask = allTasks.any { task ->
+                task.name == "publishMods" ||
+                        task.name.startsWith("publishModrinth") ||
+                        task.name.startsWith("publishCurseforge") ||
+                        task.name.startsWith("publishGithub")
+            }
+            if (!hasPublishTask) return@whenReady
+
+            project.rootProject.extra["multiloader.publishCheckDone"] = true
+            checkPublishConflict()
+        }
+
         project.afterEvaluate {
             afterEvaluate()
         }
@@ -837,6 +852,44 @@ open class MultiLoader(private val project: Project) {
                 afterFinishBuild()
             }
         }
+    }
+
+    private fun checkPublishConflict() {
+        val id = mod.modrinth
+        if (id.isBlank()) return
+
+        val token = try {
+            File("C:\\Tokens\\modrinth.txt").readText().trim()
+        } catch (e: Exception) {
+            ""
+        }
+
+        val latest = updateDependencies.getModrinthLatestVersion(id, token) ?: return
+        val (latestVersion, latestChangelog) = latest
+
+        val newVersion = project.version.toString()
+        val newChangelog = processChangelog().trim()
+
+        val versionConflict = latestVersion.trim() == newVersion
+        val changelogConflict = latestChangelog.trim().isNotEmpty() && latestChangelog.trim() == newChangelog
+
+        if (!versionConflict && !changelogConflict) return
+
+        val problems = mutableListOf<String>()
+        if (versionConflict) problems.add("version '$latestVersion'")
+        if (changelogConflict) problems.add("changelog")
+
+        project.logger.lifecycle("[Multiloader] WARNING: Modrinth already has the latest release with the same ${problems.joinToString(" and ")}.")
+        project.logger.lifecycle("[Multiloader] Continue publishing anyway? Type 'y' to force, anything else to abort:")
+
+        val answer = (System.console()?.readLine() ?: readlnOrNull()).orEmpty().trim().lowercase()
+        if (answer != "y" && answer != "yes") {
+            throw org.gradle.api.GradleException(
+                "[Multiloader] Publication aborted by user: duplicate version/changelog already exists on Modrinth."
+            )
+        }
+
+        project.logger.lifecycle("[Multiloader] Forcing publication despite duplicate.")
     }
 
     private fun setStonecutterParameters() {

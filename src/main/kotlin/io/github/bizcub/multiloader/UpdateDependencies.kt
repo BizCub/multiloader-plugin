@@ -79,6 +79,27 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         return "not_found"
     }
 
+    fun getModrinthLatestVersion(id: String, token: String): Pair<String, String>? {
+        return try {
+            val connection = URL("https://api.modrinth.com/v2/project/$id/version").openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            if (token.isNotBlank()) connection.setRequestProperty("Authorization", token)
+            connection.setRequestProperty("User-Agent", "BizCub/multiloader-plugin")
+
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+
+            val json = JSONArray(response)
+            if (json.isEmpty) return null
+
+            val obj = json.getJSONObject(0)
+            obj.optString("version_number") to obj.optString("changelog")
+        } catch (e: Exception) {
+            project.logger.lifecycle("[Multiloader] Failed to fetch Modrinth versions for conflict check: ${e.message}")
+            null
+        }
+    }
+
     fun getPlayerUUIDbyName(name: String): String {
         val urlString = "https://api.mojang.com/users/profiles/minecraft/$name"
 
