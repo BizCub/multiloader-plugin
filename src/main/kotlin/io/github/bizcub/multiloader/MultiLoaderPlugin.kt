@@ -175,6 +175,7 @@ open class MultiLoader(private val project: Project) {
         "main" to "net.fabricmc.api.ModInitializer",
         "modmenu" to "com.terraformersmc.modmenu.api.ModMenuApi"
     )
+    private val badges = mutableListOf<String>()
 
     private val buildDir: File get() = project.file("build")
     private val resourcesDir: File get() = project.rootProject.file("src/main/resources")
@@ -241,7 +242,7 @@ open class MultiLoader(private val project: Project) {
         configureModPublication()
         generateModMetadata()
         mixinConfigRegistration()
-        entrypointRegistration()
+        generateFabricModJson()
     }
 
     private fun afterProcessResources() {
@@ -290,6 +291,10 @@ open class MultiLoader(private val project: Project) {
 
     fun addEntrypoint(entrypointName: String, implementedClassName: String) {
         entrypoints.add(entrypointName to implementedClassName)
+    }
+
+    fun addBadges(vararg newBadges: String) {
+        badges.addAll(newBadges)
     }
 
     fun versionRange(
@@ -1024,7 +1029,7 @@ open class MultiLoader(private val project: Project) {
         buildMixinFile.writeText(json.toString(4))
     }
 
-    private fun entrypointRegistration() {
+    private fun generateFabricModJson() {
         val jsonFile = buildResourcesDir.resolve("fabric.mod.json")
 
         if (!isFabric || !jsonFile.exists()) return
@@ -1048,6 +1053,16 @@ open class MultiLoader(private val project: Project) {
         if (isMainCTFileExist()) json.put("accessWidener", "${mod.idDashed}.ct")
 
         if (iconFile.exists()) json.put("icon", "icon.png")
+
+        if (badges.isNotEmpty()) {
+            json.put(
+                "custom",
+                JSONObject().put(
+                    "modmenu",
+                    JSONObject().put("badges", JSONArray(badges))
+                )
+            )
+        }
 
         jsonFile.writeText(json.toString(4))
     }
