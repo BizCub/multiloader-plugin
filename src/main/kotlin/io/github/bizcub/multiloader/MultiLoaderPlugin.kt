@@ -803,6 +803,7 @@ open class MultiLoader(private val project: Project) {
                 }
             }
             named<Jar>("jar") {
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
                 doFirst {
                     afterProcessResources()
                 }
