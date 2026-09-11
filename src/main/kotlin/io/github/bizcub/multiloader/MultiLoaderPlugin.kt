@@ -651,9 +651,10 @@ open class MultiLoader(private val project: Project) {
             .filter { sourceSet -> sourceSet.name != "test" }
             .forEach { sourceSet ->
                 val capitalizedName = sourceSet.name.replaceFirstChar { character -> character.uppercase() }
+                val nameSuffix = if (sourceSet.name == "main") "" else " $capitalizedName"
 
-                definitionFileConfigurationName("1 Build Active $capitalizedName", "buildActive$capitalizedName", "Build")
-                definitionFileConfigurationName("1 Build All $capitalizedName", "buildAll$capitalizedName", "Build")
+                definitionFileConfigurationName("1 Build Active$nameSuffix", "buildActive$capitalizedName", "Build")
+                definitionFileConfigurationName("1 Build All$nameSuffix", "buildAll$capitalizedName", "Build")
             }
 
         fun String.camelCaseToWords(): String {
