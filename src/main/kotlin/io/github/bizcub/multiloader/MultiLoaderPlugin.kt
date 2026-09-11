@@ -163,8 +163,6 @@ open class MultiLoader(private val project: Project) {
     private val mainTasks = listOf(
         Pair("0 Run Client", "runActiveClient"),
         Pair("0 Run Server", "runActiveServer"),
-        Pair("1 Build Active", "buildActive"),
-        Pair("1 Build All", "buildAndCollect"),
 
         Pair("0 Remove Keys", "removeDependencyKeys"),
         Pair("0 Clear Cache", "clearCache"),
@@ -649,6 +647,15 @@ open class MultiLoader(private val project: Project) {
             definitionFileConfigurationName(name, task, folder)
         }
 
+        getSourceSets()
+            .filter { sourceSet -> sourceSet.name != "test" }
+            .forEach { sourceSet ->
+                val capitalizedName = sourceSet.name.replaceFirstChar { character -> character.uppercase() }
+
+                definitionFileConfigurationName("1 Build Active $capitalizedName", "buildActive$capitalizedName", "Build")
+                definitionFileConfigurationName("1 Build All $capitalizedName", "buildAll$capitalizedName", "Build")
+            }
+
         fun String.camelCaseToWords(): String {
             return split(Regex("(?=[A-Z])")).joinToString(" ").substring(1)
         }
@@ -932,7 +939,34 @@ open class MultiLoader(private val project: Project) {
 
         project.tasks {
             if (scc.isActive) {
-                register("buildActive") { dependsOn(named("buildAndCollect")) }
+                getSourceSets()
+                    .filter { sourceSet -> sourceSet.name != "test" }
+                    .forEach { sourceSet ->
+                        val sourceSetName = sourceSet.name
+                        val capitalizedName = sourceSetName.replaceFirstChar { character -> character.uppercase() }
+
+                        val jarTaskName: String = if (sourceSetName == "main") {
+                            "build"
+                        } else {
+                            register<Jar>("${sourceSetName}Jar") {
+                                group = "build"
+                                from(sourceSet.output)
+                                archiveClassifier.set(sourceSetName)
+                            }
+                            "${sourceSetName}Jar"
+                        }
+
+                        register<Copy>("buildAll$capitalizedName") {
+                            group = "build"
+                            into(project.rootDir.resolve("build/libs/${mod.version}"))
+                            dependsOn(jarTaskName)
+                        }
+
+                        register("buildActive$capitalizedName") {
+                            dependsOn(named("buildAll$capitalizedName"))
+                        }
+                    }
+
                 register("runActiveClient") { dependsOn(named("runClient")) }
                 register("runActiveServer") { dependsOn(named("runServer")) }
 
