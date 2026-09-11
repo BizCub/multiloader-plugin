@@ -491,7 +491,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun getResource(resource: String): String {
-        return this.javaClass.classLoader.getResource(resource).readText()
+        return this.javaClass.classLoader.getResource(resource)!!.readText()
     }
 
     private fun setCustomProjectIcon() {
@@ -514,56 +514,54 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureModPublication() {
-        if (getProp("version") == null) {
-            project.extensions.configure<ModPublishExtension>("publishMods") {
-                fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
-                displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
-                changelog.set(processChangelog())
-                version.set(project.version.toString())
-                val releaseType = when {
-                    mod.version.contains("-beta.") -> BETA
-                    mod.version.contains("-alpha.") -> ALPHA
-                    else -> STABLE
-                }
-                type.set(releaseType)
-                modLoaders.add(mod.loader)
-                if (isFabric) modLoaders.add("quilt")
+        project.extensions.configure<ModPublishExtension>("publishMods") {
+            fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
+            displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
+            changelog.set(processChangelog())
+            version.set(project.version.toString())
+            val releaseType = when {
+                mod.version.contains("-beta.") -> BETA
+                mod.version.contains("-alpha.") -> ALPHA
+                else -> STABLE
+            }
+            type.set(releaseType)
+            modLoaders.add(mod.loader)
+            if (isFabric) modLoaders.add("quilt")
 
-                modrinth {
-                    projectId.set(mod.modrinth)
-                    accessToken.set(tokenDir("modrinth"))
-                    minecraftVersionRange {
-                        start.set(mod.pubStart)
-                        end.set(mod.pubEnd)
-                        includeSnapshots.set(true)
-                    }
-                }
-                curseforge {
-                    projectId.set(mod.curseforge)
-                    accessToken.set(tokenDir("curseforge"))
-                    minecraftVersionRange {
-                        start.set(mod.pubStart)
-                        end.set(mod.pubEnd)
-                    }
-                }
-                github {
-                    accessToken.set(tokenDir("github"))
-                    repository.set("BizCub/${mod.github}")
-                    commitish.set("master")
-                    tagName.set("v${project.version}")
+            modrinth {
+                projectId.set(mod.modrinth)
+                accessToken.set(tokenDir("modrinth"))
+                minecraftVersionRange {
+                    start.set(mod.pubStart)
+                    end.set(mod.pubEnd)
+                    includeSnapshots.set(true)
                 }
             }
+            curseforge {
+                projectId.set(mod.curseforge)
+                accessToken.set(tokenDir("curseforge"))
+                minecraftVersionRange {
+                    start.set(mod.pubStart)
+                    end.set(mod.pubEnd)
+                }
+            }
+            github {
+                accessToken.set(tokenDir("github"))
+                repository.set("BizCub/${mod.github}")
+                commitish.set("master")
+                tagName.set("v${project.version}")
+            }
+        }
 
-            if (prop("multiloader.enablePublishToMaven") == "true") {
-                project.plugins.apply("maven-publish")
-                project.extensions.configure(PublishingExtension::class.java) {
-                    publications {
-                        create<MavenPublication>("mavenJava") {
-                            groupId = mod.group
-                            artifactId = mod.idDashed
-                            version = project.version.toString()
-                            from(project.components["java"])
-                        }
+        if (prop("multiloader.enablePublishToMaven") == "true") {
+            project.plugins.apply("maven-publish")
+            project.extensions.configure(PublishingExtension::class.java) {
+                publications {
+                    create<MavenPublication>("mavenJava") {
+                        groupId = mod.group
+                        artifactId = mod.idDashed
+                        version = project.version.toString()
+                        from(project.components["java"])
                     }
                 }
             }
