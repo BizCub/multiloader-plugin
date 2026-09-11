@@ -267,7 +267,7 @@ open class MultiLoader(private val project: Project) {
             file.set(builtFile)
         }
 
-        project.tasks.named<Copy>("buildAndCollect") {
+        project.tasks.named<Copy>("buildAllMain") {
             from(builtFile)
         }
     }
@@ -938,30 +938,34 @@ open class MultiLoader(private val project: Project) {
         configureTask("createMinecraftArtifacts", "processResources")
 
         project.tasks {
+            getSourceSets()
+                .filter { sourceSet -> sourceSet.name != "test" }
+                .forEach { sourceSet ->
+                    val sourceSetName = sourceSet.name
+                    val capitalizedName = sourceSetName.replaceFirstChar { it.uppercase() }
+
+                    val jarTask = if (sourceSetName == "main") {
+                        null
+                    } else {
+                        register<Jar>("${sourceSetName}Jar") {
+                            group = "build"
+                            from(sourceSet.output)
+                            archiveClassifier.set(sourceSetName)
+                        }
+                    }
+
+                    register<Copy>("buildAll$capitalizedName") {
+                        group = "build"
+                        into(project.rootDir.resolve("build/libs/${mod.version}"))
+                        if (jarTask != null) from(jarTask) else dependsOn("build")
+                    }
+                }
+
             if (scc.isActive) {
                 getSourceSets()
-                    .filter { sourceSet -> sourceSet.name != "test" }
+                    .filter { it.name != "test" }
                     .forEach { sourceSet ->
-                        val sourceSetName = sourceSet.name
-                        val capitalizedName = sourceSetName.replaceFirstChar { character -> character.uppercase() }
-
-                        val jarTaskName: String = if (sourceSetName == "main") {
-                            "build"
-                        } else {
-                            register<Jar>("${sourceSetName}Jar") {
-                                group = "build"
-                                from(sourceSet.output)
-                                archiveClassifier.set(sourceSetName)
-                            }
-                            "${sourceSetName}Jar"
-                        }
-
-                        register<Copy>("buildAll$capitalizedName") {
-                            group = "build"
-                            into(project.rootDir.resolve("build/libs/${mod.version}"))
-                            dependsOn(jarTaskName)
-                        }
-
+                        val capitalizedName = sourceSet.name.replaceFirstChar { it.uppercase() }
                         register("buildActive$capitalizedName") {
                             dependsOn(named("buildAll$capitalizedName"))
                         }
@@ -969,19 +973,6 @@ open class MultiLoader(private val project: Project) {
 
                 register("runActiveClient") { dependsOn(named("runClient")) }
                 register("runActiveServer") { dependsOn(named("runServer")) }
-
-                fun registerMultipleTasks(list: List<String>) {
-                    list.forEach { publish ->
-                        register("publish${publish}Active") {
-                            dependsOn(named("publish$publish"))
-                        }
-                    }
-                }
-
-                registerMultipleTasks(publishPlatforms)
-                if (prop("multiloader.enablePublishToMaven") == "true") {
-                    registerMultipleTasks(publishMaven)
-                }
             }
         }
 
