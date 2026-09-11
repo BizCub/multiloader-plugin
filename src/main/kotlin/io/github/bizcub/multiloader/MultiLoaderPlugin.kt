@@ -771,7 +771,7 @@ open class MultiLoader(private val project: Project) {
             if (prop("multiloader.enablePublishToMaven") == "true") {
                 registerMultipleTasks(publishMaven)
             }
-            register<Copy>("buildAndCollect") {
+            register<Copy>("buildAllMain") {
                 group = "build"
                 into(project.rootDir.resolve("build/libs/${mod.version}"))
                 dependsOn("build")
@@ -930,8 +930,8 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureTasks() {
-        fun configureTask(task1: String, task2: String) {
-            project.tasks.findByName(task1)?.dependsOn(task2)
+        fun configureTask(dependentTask: String, dependencyTask: String) {
+            project.tasks.findByName(dependentTask)?.dependsOn(dependencyTask)
         }
 
         configureTask("validateAccessWidener", "processResources")
@@ -942,7 +942,7 @@ open class MultiLoader(private val project: Project) {
                 .filter { sourceSet -> sourceSet.name != "test" }
                 .forEach { sourceSet ->
                     val sourceSetName = sourceSet.name
-                    val capitalizedName = sourceSetName.replaceFirstChar { it.uppercase() }
+                    val capitalizedName = sourceSetName.replaceFirstChar { character -> character.uppercase() }
 
                     val jarTask = if (sourceSetName == "main") {
                         null
@@ -963,9 +963,9 @@ open class MultiLoader(private val project: Project) {
 
             if (scc.isActive) {
                 getSourceSets()
-                    .filter { it.name != "test" }
+                    .filter { sourceSet -> sourceSet.name != "test" }
                     .forEach { sourceSet ->
-                        val capitalizedName = sourceSet.name.replaceFirstChar { it.uppercase() }
+                        val capitalizedName = sourceSet.name.replaceFirstChar { character -> character.uppercase() }
                         register("buildActive$capitalizedName") {
                             dependsOn(named("buildAll$capitalizedName"))
                         }
@@ -973,6 +973,19 @@ open class MultiLoader(private val project: Project) {
 
                 register("runActiveClient") { dependsOn(named("runClient")) }
                 register("runActiveServer") { dependsOn(named("runServer")) }
+
+                fun registerMultipleTasks(platforms: List<String>) {
+                    platforms.forEach { publishTarget ->
+                        register("publish${publishTarget}Active") {
+                            dependsOn(named("publish$publishTarget"))
+                        }
+                    }
+                }
+
+                registerMultipleTasks(publishPlatforms)
+                if (prop("multiloader.enablePublishToMaven") == "true") {
+                    registerMultipleTasks(publishMaven)
+                }
             }
         }
 
