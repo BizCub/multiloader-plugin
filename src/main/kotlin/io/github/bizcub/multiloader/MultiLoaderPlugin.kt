@@ -939,25 +939,21 @@ open class MultiLoader(private val project: Project) {
 
         project.tasks {
             getSourceSets()
-                .filter { sourceSet -> sourceSet.name != "test" }
+                .filter { sourceSet -> sourceSet.name != "test" && sourceSet.name != "main" }
                 .forEach { sourceSet ->
                     val sourceSetName = sourceSet.name
                     val capitalizedName = sourceSetName.replaceFirstChar { character -> character.uppercase() }
 
-                    val jarTask = if (sourceSetName == "main") {
-                        null
-                    } else {
-                        register<Jar>("${sourceSetName}Jar") {
-                            group = "build"
-                            from(sourceSet.output)
-                            archiveClassifier.set(sourceSetName)
-                        }
+                    val jarTask = register<Jar>("${sourceSetName}Jar") {
+                        group = "build"
+                        from(sourceSet.output)
+                        archiveClassifier.set(sourceSetName)
                     }
 
                     register<Copy>("buildAll$capitalizedName") {
                         group = "build"
                         into(project.rootDir.resolve("build/libs/${mod.version}"))
-                        if (jarTask != null) from(jarTask) else dependsOn("build")
+                        from(jarTask)
                     }
                 }
 
