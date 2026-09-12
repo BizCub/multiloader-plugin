@@ -29,7 +29,7 @@ dependencies {
 
     implementation("net.fabricmc:fabric-loom:1.17.20")
     implementation("net.minecraftforge:forgegradle:7.0.40")
-    implementation("net.minecraftforge:renamer-gradle:1.1.1")
+    implementation("net.minecraftforge:renamer-gradle:1.1.0")
     implementation("net.minecraftforge:jarjar-gradle:0.2.3")
     implementation("net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.144")
 
