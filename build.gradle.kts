@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bizcub"
-version = "0.8.26"
+version = "0.8.27"
 
 tasks.jar {
     manifest {
@@ -23,13 +23,13 @@ repositories {
 }
 
 dependencies {
-    implementation("dev.kikugie:stonecutter:0.9.7")
+    implementation("dev.kikugie:stonecutter:0.9.8")
     implementation("me.modmuss50:mod-publish-plugin:2.2.0")
     implementation("dev.kikugie:fletching-table:0.1.0-alpha.23")
 
-    implementation("net.fabricmc:fabric-loom:1.17.19")
-    implementation("net.minecraftforge:forgegradle:7.0.34")
-    implementation("net.minecraftforge:renamer-gradle:1.1.0")
+    implementation("net.fabricmc:fabric-loom:1.17.20")
+    implementation("net.minecraftforge:forgegradle:7.0.40")
+    implementation("net.minecraftforge:renamer-gradle:1.1.1")
     implementation("net.minecraftforge:jarjar-gradle:0.2.3")
     implementation("net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.144")
 
