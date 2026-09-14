@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bizcub"
-version = "0.8.27"
+version = "0.8.28"
 
 tasks.jar {
     manifest {
