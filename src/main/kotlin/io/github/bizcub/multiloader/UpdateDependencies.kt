@@ -282,6 +282,33 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         }
     }
 
+    fun listKeys(): List<String> {
+        if (!file.exists() || !file.isFile || file.readText().isEmpty()) return emptyList()
+
+        val root = try {
+            JSONObject(file.readText())
+        } catch (e: Exception) {
+            return emptyList()
+        }
+
+        val keys = mutableListOf<String>()
+        for (versionKey in root.keySet().toList()) {
+            val versionValue = root.opt(versionKey)
+            if (versionValue is JSONObject) {
+                for (loaderKey in versionValue.keySet().toList()) {
+                    val loaderValue = versionValue.opt(loaderKey)
+                    if (loaderValue is JSONObject) {
+                        for (innerKey in loaderValue.keySet().toList()) {
+                            val value = loaderValue.opt(innerKey)?.toString().orEmpty()
+                            keys.add("$versionKey.$loaderKey.$innerKey = $value")
+                        }
+                    }
+                }
+            }
+        }
+        return keys
+    }
+
     fun clearCache() {
         if (!file.exists() || !file.isFile) {
             project.logger.lifecycle("[Multiloader] Cache file not found, nothing to clear.")

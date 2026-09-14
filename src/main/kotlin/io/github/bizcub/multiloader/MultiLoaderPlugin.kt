@@ -1010,12 +1010,33 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun removeDependencyKeys() {
-        project.logger.lifecycle("[Multiloader] Enter keys to remove from dependencies.json (comma/space separated):")
+        val availableEntries = updateDependencies.listKeys()
+
+        if (availableEntries.isEmpty()) {
+            project.logger.lifecycle("[Multiloader] dependencies.json is empty, nothing to remove.")
+            return
+        }
+
+        project.logger.lifecycle("[Multiloader] Available keys:")
+        availableEntries.forEachIndexed { index, entry ->
+            project.logger.lifecycle("    ${index + 1}. $entry")
+        }
+        project.logger.lifecycle("[Multiloader] Enter numbers or keys to remove (comma/space separated):")
+
         val raw = (System.console()?.readLine() ?: readlnOrNull()).orEmpty()
 
-        val keys = raw.split(",", " ", "\n")
+        val tokens = raw.split(",", " ", "\n")
             .map { it.trim() }
             .filter { it.isNotEmpty() }
+
+        val keys = tokens.map { token ->
+            val selectedNumber = token.toIntOrNull()
+            if (selectedNumber != null && selectedNumber in 1..availableEntries.size) {
+                availableEntries[selectedNumber - 1].substringBefore(" = ").trim()
+            } else {
+                token
+            }
+        }
 
         updateDependencies.removeKeysFromConfig(keys)
     }
