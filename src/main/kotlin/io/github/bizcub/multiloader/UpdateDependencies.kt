@@ -16,46 +16,55 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     val file = filePath.resolve("dependencies.json")
     val isUpdateEnabled = ml.prop("multiloader.enableDependenciesUpdate") == "true"
 
-    fun getDep(key: String, useId: Boolean = false): String {
+    private fun downloadDependency(key: String, useId: Boolean, message: String): String {
+        println("[Multiloader] Downloading dependency '$key'$message ...")
 
-        fun downloadDependency(message: String): String {
-            println("[Multiloader] Downloading dependency '$key'$message ...")
-
-            if (key == "fabric") {
-                val fabric = fabric()
-                addToConfig("loader", fabric)
-                return fabric
-            } else if (key == "forge") {
-                val forge = forge()
-                addToConfig("loader", forge)
-                return forge
-            } else if (key == "neoforge") {
-                val neoForge = neoForge()
-                addToConfig("loader", neoForge)
-                return neoForge
-            } else {
+        return when (key) {
+            "fabric" -> fabric().also { addToConfig("loader", it) }
+            "forge" -> forge().also { addToConfig("loader", it) }
+            "neoforge" -> neoForge().also { addToConfig("loader", it) }
+            else -> {
                 val version = getLastModrinthVersion(key, useId)
                 if (version != "not_found") {
-                    addToConfig(key, version)
-                    return version
+                    version.also { addToConfig(key, it) }
                 } else {
-                    addToConfig(key, ml.getProp(key) as String)
-                    return ml.getProp(key) as String
+                    (ml.getProp(key) as String).also { addToConfig(key, it) }
                 }
             }
         }
+    }
 
+    fun getDep(key: String, useId: Boolean = false): String {
         if (isUpdateEnabled) {
-            return downloadDependency("")
-        } else {
-            val innerKey = if (key == "fabric" || key == "forge" || key == "neoforge") "loader" else key
-            val configValue = getConfigValue(mod.mcExact, mod.loader, innerKey)
-            return configValue ?: downloadDependency(", because it was not found in the config")
+            return downloadDependency(key, useId, "")
         }
+        val innerKey = if (key == "fabric" || key == "forge" || key == "neoforge") "loader" else key
+        val configValue = getConfigValue(mod.mcExact, mod.loader, innerKey)
+        return configValue ?: downloadDependency(key, useId, ", because it was not found in the config")
+    }
+
+    fun updateAllCachedDeps() {
+        listKeys().forEach { key -> forceUpdateDep(key) }
+    }
+
+    fun forceUpdateDep(key: String, useId: Boolean = false): String {
+        return downloadDependency(key, useId, " (forced update)")
+    }
+
+    companion object {
+        private val urlCache = HashMap<String, String>()
+    }
+
+    private fun fetch(url: String): String = urlCache.getOrPut(url) {
+        val conn = URL(url).openConnection() as HttpURLConnection
+        conn.connectTimeout = 5000
+        conn.readTimeout = 5000
+        conn.setRequestProperty("User-Agent", "BizCub/multiloader-plugin")
+        conn.inputStream.bufferedReader().use { it.readText() }.also { conn.disconnect() }
     }
 
     fun getLastModrinthVersion(id: String, useId: Boolean = false): String {
-        val json = JSONArray(URL("https://api.modrinth.com/v2/project/$id/version").readText())
+        val json = JSONArray(fetch("https://api.modrinth.com/v2/project/$id/version"))
 
         fun checkAppropriateVersions(gameVersion: String): Boolean {
             if (ml.prop("multiloader.enableAdvancedVersionSearch") == "true") {
@@ -124,9 +133,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
 
     fun forge(): String {
         val mc = mod.mcExact
-
-        val jsonString = URL("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json").readText()
-        val jsonObject = JSONObject(jsonString)
+        val jsonObject = JSONObject(fetch("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"))
         val array = jsonObject.getJSONArray(mc)
 
         return "${mod.mcExact}-${array.get(array.length()-1).toString().split(mc)[1].substring(1)}"
@@ -146,7 +153,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun getXMLVersionList(url: String): List<String> {
-        val xmlString = URL(url).readText()
+        val xmlString = fetch(url)
         val factory = DocumentBuilderFactory.newInstance()
         val builder = factory.newDocumentBuilder()
         val document = builder.parse(xmlString.byteInputStream())

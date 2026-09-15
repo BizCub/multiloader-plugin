@@ -36,7 +36,6 @@ import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.bundling.AbstractArchiveTask
-import org.gradle.internal.DefaultTaskExecutionRequest
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
@@ -356,7 +355,7 @@ open class MultiLoader(private val project: Project) {
         val dep = updateDependencies.getDep(key, useId)
 
         if (key == "fabric") {
-            project.configurations.all {
+            project.configurations.matching { it.name.endsWith("implementation", true) }.configureEach {
                 resolutionStrategy.force("net.fabricmc:fabric-loader:$dep")
             }
         }
@@ -498,6 +497,13 @@ open class MultiLoader(private val project: Project) {
         return this.javaClass.classLoader.getResource(resource)!!.readText()
     }
 
+    private fun writeIfChanged(file: File, content: String) {
+        if (!file.exists() || file.readText() != content) {
+            file.parentFile?.mkdirs()
+            file.writeText(content)
+        }
+    }
+
     private fun setCustomProjectIcon() {
         val iconFile = resourcesDir.resolve("icon.png")
         if (iconFile.exists()) {
@@ -507,21 +513,20 @@ open class MultiLoader(private val project: Project) {
 
     private fun setServerProperties() {
         serverRunFile.mkdirs()
-        val eulaFile = serverRunFile.resolve("eula.txt")
+        writeIfChanged(serverRunFile.resolve("eula.txt"), "eula=true")
         val propertiesFile = serverRunFile.resolve("server.properties")
-        eulaFile.createNewFile()
-        eulaFile.writeText("eula=true")
         if (!propertiesFile.exists()) {
-            propertiesFile.createNewFile()
             propertiesFile.writeText("online-mode=false")
         }
     }
 
     private fun configureModPublication() {
         project.extensions.configure<ModPublishExtension>("publishMods") {
-            fun tokenDir(token: String) = File("C:\\Tokens\\$token.txt").readText()
+            fun tokenProvider(token: String) = project.provider {
+                File("C:\\Tokens\\$token.txt").readText()
+            }
             displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
-            changelog.set(processChangelog())
+            changelog.set(project.provider { processChangelog() })
             version.set(project.version.toString())
             val releaseType = when {
                 mod.version.contains("-beta.") -> BETA
@@ -534,7 +539,7 @@ open class MultiLoader(private val project: Project) {
 
             modrinth {
                 projectId.set(mod.modrinth)
-                accessToken.set(tokenDir("modrinth"))
+                accessToken.set(tokenProvider("modrinth"))
                 minecraftVersionRange {
                     start.set(mod.pubStart)
                     end.set(mod.pubEnd)
@@ -543,14 +548,14 @@ open class MultiLoader(private val project: Project) {
             }
             curseforge {
                 projectId.set(mod.curseforge)
-                accessToken.set(tokenDir("curseforge"))
+                accessToken.set(tokenProvider("curseforge"))
                 minecraftVersionRange {
                     start.set(mod.pubStart)
                     end.set(mod.pubEnd)
                 }
             }
             github {
-                accessToken.set(tokenDir("github"))
+                accessToken.set(tokenProvider("github"))
                 repository.set("BizCub/${mod.github}")
                 commitish.set("master")
                 tagName.set("v${project.version}")
@@ -616,30 +621,22 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun createRunConfiguration() {
-        project.rootDir.resolve(".idea/runConfigurations")
-            .listFiles { it.extension == "xml" && it.name.startsWith("Multiloader_")}
-            ?.forEach(File::delete)
+        val dir = project.rootDir.resolve(".idea/runConfigurations")
+        dir.mkdirs()
+
+        val desired = linkedMapOf<String, String>()
 
         fun definitionFileConfigurationName(name: String, task: String = "", folderName: String = "") {
             val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
-            var task1 = task.ifEmpty {
-                fileName.lowerCaseFirst()
-            }
-
+            var task1 = task.ifEmpty { fileName.lowerCaseFirst() }
             if (task1 == "publishToMavenLocal") task1 += " --no-parallel"
-
-            val filePath = project.rootDir.resolve(".idea/runConfigurations")
-            filePath.mkdirs()
 
             val folderAttr = if (folderName.isEmpty()) "" else " folderName=\"$folderName\""
 
-            val file = filePath.resolve("Multiloader_$fileName.xml")
-            file.createNewFile()
-            file.writeText(getResource("runConfiguration/main.xml")
+            desired["Multiloader_$fileName.xml"] = getResource("runConfiguration/main.xml")
                 .replace("%NAME%", name)
                 .replace("%TASK%", task1)
                 .replace("%FOLDER%", folderAttr)
-            )
         }
 
         val cacheTasks = listOf("removeDependencyKeys", "clearCache", "removeUnusedVersions")
@@ -652,31 +649,22 @@ open class MultiLoader(private val project: Project) {
         getSourceSets()
             .filter { sourceSet -> sourceSet.name != "test" }
             .forEach { sourceSet ->
-                val capitalizedName = sourceSet.name.replaceFirstChar { character -> character.uppercase() }
+                val capitalizedName = sourceSet.name.replaceFirstChar { it.uppercase() }
                 val nameSuffix = if (sourceSet.name == "main") "" else " $capitalizedName"
-
-                definitionFileConfigurationName("1 Build Active$nameSuffix", "buildActive$capitalizedName", "Build")
+                definitionFileConfigurationName("0 Build Active$nameSuffix", "buildActive$capitalizedName", "Build")
                 definitionFileConfigurationName("1 Build All$nameSuffix", "buildAll$capitalizedName", "Build")
             }
 
-        fun String.camelCaseToWords(): String {
-            return split(Regex("(?=[A-Z])")).joinToString(" ").substring(1)
-        }
+        fun String.camelCaseToWords(): String =
+            split(Regex("(?=[A-Z])")).joinToString(" ").substring(1)
 
         fun generateMultiplePublishConfigurations(list: List<String>, folderName: String) {
             val transformedList = list.map { it.camelCaseToWords() }
-
-            transformedList.forEach { platform ->
-                definitionFileConfigurationName("0 Publish $platform Active", folderName = folderName)
-            }
-
-            transformedList.forEach { platform ->
-                definitionFileConfigurationName("1 Publish $platform", folderName = folderName)
-            }
-
+            transformedList.forEach { definitionFileConfigurationName("0 Publish $it Active", folderName = folderName) }
+            transformedList.forEach { definitionFileConfigurationName("1 Publish $it", folderName = folderName) }
             sc.versions.forEach { version ->
-                transformedList.forEach { platform ->
-                    definitionFileConfigurationName("2 Publish $platform ${version.version}", folderName = folderName)
+                transformedList.forEach {
+                    definitionFileConfigurationName("2 Publish $it ${version.version}", folderName = folderName)
                 }
             }
         }
@@ -685,17 +673,23 @@ open class MultiLoader(private val project: Project) {
         if (prop("multiloader.enablePublishToMaven") == "true") {
             generateMultiplePublishConfigurations(publishMaven, "Publish Maven")
         }
+
+        dir.listFiles { f -> f.extension == "xml" && f.name.startsWith("Multiloader_") }
+            ?.filter { it.name !in desired }
+            ?.forEach(File::delete)
+
+        desired.forEach { (name, content) ->
+            val file = dir.resolve(name)
+            if (!file.exists() || file.readText() != content) file.writeText(content)
+        }
     }
 
     private fun updateOrCreateIssueTemplates() {
         val issueTemplatesDir = project.rootDir.resolve(".github/ISSUE_TEMPLATE")
         issueTemplatesDir.mkdirs()
-        val bugReportFile = issueTemplatesDir.resolve("bug-report.yml")
-        bugReportFile.writeText(getResource("issueTemplate/bug-report.yml"))
-        val newFeatureFile = issueTemplatesDir.resolve("new-feature.yml")
-        newFeatureFile.writeText(getResource("issueTemplate/new-feature.yml"))
-        val issueConfigFile = issueTemplatesDir.resolve("config.yml")
-        issueConfigFile.writeText(getResource("issueTemplate/config.yml"))
+        writeIfChanged(issueTemplatesDir.resolve("bug-report.yml"), getResource("issueTemplate/bug-report.yml"))
+        writeIfChanged(issueTemplatesDir.resolve("new-feature.yml"), getResource("issueTemplate/new-feature.yml"))
+        writeIfChanged(issueTemplatesDir.resolve("config.yml"), getResource("issueTemplate/config.yml"))
     }
 
     private fun updateOrCreateChangelogFile() {
@@ -705,7 +699,7 @@ open class MultiLoader(private val project: Project) {
 
     private fun updateOrCreateGitIgnoreFile() {
         val gitIgnoreFile = project.rootDir.resolve(".gitignore")
-        gitIgnoreFile.writeText(getResource("mainFiles/gitignore.txt"))
+        writeIfChanged(gitIgnoreFile, getResource("mainFiles/gitignore.txt"))
     }
 
     private fun access() {
@@ -780,6 +774,12 @@ open class MultiLoader(private val project: Project) {
                 dependsOn("build")
             }
             if (scc.isActive) {
+                register("updateDependencies") {
+                    group = "multiloader"
+                    doLast {
+                        updateDependencies.updateAllCachedDeps()
+                    }
+                }
                 register("removeDependencyKeys") {
                     group = "multiloader"
                     doLast {
@@ -997,19 +997,6 @@ open class MultiLoader(private val project: Project) {
                 standardInput = System.`in`
                 args("--nogui")
             }
-        }
-    }
-
-    private fun addTaskToQueue() {
-        if (System.getProperty("idea.sync.active", "false").toBoolean()) {
-            val sp = project.gradle.startParameter
-            sp.setTaskRequests(
-                sp.taskRequests + DefaultTaskExecutionRequest(
-                    listOf("processResources"),
-                    project.path,
-                    project.projectDir
-                )
-            )
         }
     }
 
