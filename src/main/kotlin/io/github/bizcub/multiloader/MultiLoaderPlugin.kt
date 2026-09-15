@@ -227,7 +227,6 @@ open class MultiLoader(private val project: Project) {
         neoforgeFix()
         access()
         setProperties()
-        addTaskToQueue()
         configureInit()
     }
 
@@ -238,12 +237,17 @@ open class MultiLoader(private val project: Project) {
         configureCommon()
         configureTasks()
         configureModPublication()
-        generateModMetadata()
-        mixinConfigRegistration()
-        generateFabricModJson()
     }
 
+    private var resourcesGenerated = false
+
     private fun afterProcessResources() {
+        if (!resourcesGenerated) {
+            generateModMetadata()
+            mixinConfigRegistration()
+            generateFabricModJson()
+            resourcesGenerated = true
+        }
         refmapRegister()
     }
 
