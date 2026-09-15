@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bizcub"
-version = "0.8.29"
+version = "0.8.30"
 
 tasks.jar {
     manifest {
@@ -31,7 +31,7 @@ dependencies {
     implementation("net.minecraftforge:forgegradle:7.0.40")
     implementation("net.minecraftforge:renamer-gradle:1.1.0")
     implementation("net.minecraftforge:jarjar-gradle:0.2.3")
-    implementation("net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.144")
+    implementation("net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.147")
 
     implementation("org.json:json:20231013")
     implementation("com.github.javaparser:javaparser-symbol-solver-core:3.28.2")
