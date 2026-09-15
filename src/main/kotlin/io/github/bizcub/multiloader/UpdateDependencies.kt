@@ -110,12 +110,10 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun getPlayerUUIDbyName(name: String): String {
-        val urlString = "https://api.mojang.com/users/profiles/minecraft/$name"
-
-        val url = URL(urlString)
-        val connection = url.openConnection() as HttpURLConnection
+        val connection = URL("https://api.mojang.com/users/profiles/minecraft/$name").openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
-
+        connection.connectTimeout = 5000
+        connection.readTimeout = 5000
         val response = connection.inputStream.bufferedReader().use { it.readText() }
         connection.disconnect()
 
@@ -169,7 +167,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun getMinecraftVersionList(url: String): List<String> {
-        val jsonString = URL(url).readText()
+        val jsonString = fetch(url)
         val jsonObject = JSONObject(jsonString)
         val array = jsonObject.getJSONArray("versions")
 

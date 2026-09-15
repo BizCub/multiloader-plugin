@@ -799,22 +799,16 @@ open class MultiLoader(private val project: Project) {
                     }
                 }
             }
-            if (mixinFile.exists()) {
-                named<Jar>("jar") {
-                    manifest {
-                        attributes["MixinConfigs"] = mixinFile.name
-                    }
+            named<Jar>("jar") {
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+                if (mixinFile.exists()) {
+                    manifest { attributes["MixinConfigs"] = mixinFile.name }
                 }
+                doFirst { afterProcessResources() }
             }
             named<ProcessResources>("processResources") {
                 duplicatesStrategy = DuplicatesStrategy.EXCLUDE
                 doLast {
-                    afterProcessResources()
-                }
-            }
-            named<Jar>("jar") {
-                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-                doFirst {
                     afterProcessResources()
                 }
             }
