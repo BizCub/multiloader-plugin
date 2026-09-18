@@ -672,6 +672,9 @@ open class MultiLoader(private val project: Project) {
         }
 
         definitionFileConfigurationName("0 Publish Platform", "publishInteractive", "Publish Platform")
+        definitionFileConfigurationName("1 Publish Active", "publishAllActive", "Publish Platform")
+        definitionFileConfigurationName("2 Publish All", "publishAllVersions", "Publish Platform")
+
         if (prop("multiloader.enablePublishToMaven") == "true") {
             generateMultiplePublishConfigurations(publishMaven, "Publish Maven")
         }
@@ -845,6 +848,16 @@ open class MultiLoader(private val project: Project) {
                         if (exitCode != 0) {
                             throw org.gradle.api.GradleException("[Multiloader] Task $taskPath failed with code $exitCode")
                         }
+                    }
+                }
+                register("publishAllActive") {
+                    group = "publishing"
+                    dependsOn(named("publishModsActive"))
+                }
+                register("publishAllVersions") {
+                    group = "publishing"
+                    sc.versions.forEach { node ->
+                        dependsOn(":${node.project}:publishMods")
                     }
                 }
             }
