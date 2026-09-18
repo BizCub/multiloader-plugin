@@ -159,7 +159,7 @@ open class MultiLoader(private val project: Project) {
 
     private val updateDependencies = UpdateDependencies(project, this)
     private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
-    private val publishPlatforms = listOf("Mods", "Modrinth", "Curseforge", "Github")
+    private val publishPlatforms = listOf("All", "Modrinth", "Curseforge", "Github")
     private val publishMaven = listOf("ToMavenLocal")
     private val mainTasks = listOf(
         Pair("0 Run Client", "runActiveClient"),
@@ -410,6 +410,8 @@ open class MultiLoader(private val project: Project) {
         else
             null
     }
+
+    private fun realPublishTarget(platform: String) = if (platform == "All") "Mods" else platform
 
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
         project.extensions.configure("publishMods", block)
@@ -763,9 +765,10 @@ open class MultiLoader(private val project: Project) {
         project.tasks {
             fun registerMultipleTasks(list: List<String>) {
                 list.forEach { publish ->
-                    register<Copy>("publish$publish${mod.mc}") {
+                    val real = realPublishTarget(publish)
+                    register<Copy>("publish$real${mod.mc}") {
                         group = "publishing"
-                        dependsOn("publish$publish")
+                        dependsOn("publish$real")
                     }
                 }
             }
@@ -825,8 +828,9 @@ open class MultiLoader(private val project: Project) {
                         val loader = if (isActive) "" else ask("Enter loader", loaders)
 
                         val site = ask("Enter publishing site", sites)
-                        val siteTask = sites.firstOrNull { it.equals(site, ignoreCase = true) }
+                        val siteInput = sites.firstOrNull { it.equals(site, ignoreCase = true) }
                             ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
+                        val siteTask = realPublishTarget(siteInput)
 
                         val taskPath = if (isActive) {
                             ":$activeProject:publish${siteTask}Active"
@@ -1031,8 +1035,9 @@ open class MultiLoader(private val project: Project) {
 
                 fun registerMultipleTasks(platforms: List<String>) {
                     platforms.forEach { publishTarget ->
-                        register("publish${publishTarget}Active") {
-                            dependsOn(named("publish$publishTarget"))
+                        val real = realPublishTarget(publishTarget)
+                        register("publish${real}Active") {
+                            dependsOn(named("publish$real"))
                         }
                     }
                 }
