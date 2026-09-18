@@ -179,8 +179,8 @@ open class MultiLoader(private val project: Project) {
     private val buildResourcesDir: File get() = buildDir.resolve("resources/main")
     private val buildResourcesDirForge: File get() = buildDir.resolve("sourceSets/main")
 
-    val clientRunFile: File get() = project.file("run/client")
-    val serverRunFile: File get() = project.file("run/server")
+    val clientRunFile: File get() = project.rootProject.file("run/client")
+    val serverRunFile: File get() = project.rootProject.file("run/server")
     val iconFile: File get() = resourcesDir.resolve("icon.png")
     val mixinFile: File get() = resourcesDir.resolve("${mod.idDashed}.mixins.json")
     val ctMainFile: File get() = resourcesDir.resolve("${mod.idDashed}.ct")
