@@ -7,6 +7,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import dev.kikugie.fletching_table.extension.FletchingTableExtension
 import dev.kikugie.stonecutter.build.StonecutterBuildExtension
 import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
+import dev.kikugie.stonecutter.data.StonecutterProject
 import dev.kikugie.stonecutter.settings.StonecutterSettingsExtension
 import me.modmuss50.mpp.ModPublishExtension
 import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
@@ -815,42 +816,85 @@ open class MultiLoader(private val project: Project) {
                         val loaders  = nodes.map { it.project.substringAfterLast("-") }.distinct()
                         val sites    = publishPlatforms
 
-                        fun ask(prompt: String, options: List<String>): String {
-                            project.logger.lifecycle("[Multiloader] $prompt (Possible values: ${options.joinToString(", ")})")
-                            val input = (System.console()?.readLine() ?: readlnOrNull()).orEmpty().trim()
+                        fun ask(prompt: String, options: List<String>): List<String> {
+                            project.logger.lifecycle(
+                                "[Multiloader] $prompt (Possible values: ${options.joinToString(", ")}; comma-separated)"
+                            )
+                            val input = (System.console()?.readLine() ?: readlnOrNull()).orEmpty()
                             project.logger.lifecycle("")
-                            return input
+                            return input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                         }
 
-                        val version = ask("Enter Minecraft version (or 'active')", versions + "active")
-                        val isActive = version.equals("active", ignoreCase = true)
-
-                        val loader = if (isActive) "" else ask("Enter loader", loaders)
-
-                        val site = ask("Enter publishing site", sites)
-                        val siteInput = sites.firstOrNull { it.equals(site, ignoreCase = true) }
-                            ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
-                        val siteTask = realPublishTarget(siteInput)
-
-                        val taskPath = if (isActive) {
-                            ":$activeProject:publish${siteTask}Active"
-                        } else {
-                            ":$version-$loader:publish$siteTask"
+                        val versionInputs = ask("Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')", versions + "active" + "all")
+                        if (versionInputs.isEmpty()) {
+                            throw org.gradle.api.GradleException("[Multiloader] No version entered")
                         }
 
-                        project.logger.lifecycle("[Multiloader] Running: $taskPath")
+                        val nonActivePresent = versionInputs.any { !it.equals("active", ignoreCase = true) }
+                        val loaderInputs = if (nonActivePresent) ask("Enter loader(s)", loaders) else emptyList()
+
+                        val siteInputs = ask("Enter publishing site(s)", sites)
+                        if (siteInputs.isEmpty()) {
+                            throw org.gradle.api.GradleException("[Multiloader] No site entered")
+                        }
+                        val siteTasks = siteInputs.map { site ->
+                            val matched = sites.firstOrNull { it.equals(site, ignoreCase = true) }
+                                ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
+                            realPublishTarget(matched)
+                        }
+
+                        fun resolveNodes(token: String, loader: String): List<StonecutterProject> = when {
+                            token.equals("all", ignoreCase = true) ->
+                                nodes.filter { it.project.substringAfterLast("-") == loader }
+
+                            token in versions ->
+                                nodes.filter { it.version == token && it.project.substringAfterLast("-") == loader }
+
+                            else -> nodes.filter { node ->
+                                runCatching { node.parsed.matches(token) }.getOrDefault(false) &&
+                                        node.project.substringAfterLast("-") == loader
+                            }
+                        }
+
+                        val taskPaths = LinkedHashSet<String>()
+                        versionInputs.forEach { token ->
+                            val isActive = token.equals("active", ignoreCase = true)
+                            siteTasks.forEach { siteTask ->
+                                if (isActive) {
+                                    taskPaths += ":$activeProject:publish${siteTask}Active"
+                                } else {
+                                    if (loaderInputs.isEmpty()) {
+                                        throw org.gradle.api.GradleException("[Multiloader] No loader entered for '$token'")
+                                    }
+                                    loaderInputs.forEach { loader ->
+                                        val resolved = resolveNodes(token, loader)
+                                        if (resolved.isEmpty()) {
+                                            throw org.gradle.api.GradleException(
+                                                "[Multiloader] No versions match '$token' for loader '$loader'"
+                                            )
+                                        }
+                                        resolved.forEach { node -> taskPaths += ":${node.project}:publish$siteTask" }
+                                    }
+                                }
+                            }
+                        }
 
                         val isWindows = System.getProperty("os.name").lowercase().contains("win")
                         val gradlew = if (isWindows) "gradlew.bat" else "./gradlew"
 
-                        val exitCode = ProcessBuilder(gradlew, taskPath)
+                        val paths = taskPaths.toList()
+                        project.logger.lifecycle("[Multiloader] Running: ${paths.joinToString(" ")}")
+
+                        val exitCode = ProcessBuilder(listOf(gradlew) + paths)
                             .directory(project.rootDir)
                             .inheritIO()
                             .start()
                             .waitFor()
 
                         if (exitCode != 0) {
-                            throw org.gradle.api.GradleException("[Multiloader] Task $taskPath failed with code $exitCode")
+                            throw org.gradle.api.GradleException(
+                                "[Multiloader] Publish failed with code $exitCode (${paths.joinToString(" ")})"
+                            )
                         }
                     }
                 }
