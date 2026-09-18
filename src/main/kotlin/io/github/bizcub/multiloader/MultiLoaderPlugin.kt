@@ -40,7 +40,9 @@ import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
 import org.gradle.kotlin.dsl.named
+import org.gradle.kotlin.dsl.support.serviceOf
 import org.gradle.language.jvm.tasks.ProcessResources
+import org.gradle.process.ExecOperations
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -669,7 +671,7 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
-        generateMultiplePublishConfigurations(publishPlatforms, "Publish Platform")
+        definitionFileConfigurationName("0 Publish Platform", "publishInteractive", "Publish Platform")
         if (prop("multiloader.enablePublishToMaven") == "true") {
             generateMultiplePublishConfigurations(publishMaven, "Publish Maven")
         }
@@ -796,6 +798,53 @@ open class MultiLoader(private val project: Project) {
                     group = "multiloader"
                     doLast {
                         removeUnusedVersions()
+                    }
+                }
+                register("publishInteractive") {
+                    group = "publishing"
+                    val activeProject = scc.project
+                    doLast {
+                        val nodes    = sc.versions
+                        val versions = nodes.map { it.version }.distinct()
+                        val loaders  = nodes.map { it.project.substringAfterLast("-") }.distinct()
+                        val sites    = publishPlatforms
+
+                        fun ask(prompt: String, options: List<String>): String {
+                            project.logger.lifecycle("[Multiloader] $prompt (Possible values: ${options.joinToString(", ")})")
+                            val input = (System.console()?.readLine() ?: readlnOrNull()).orEmpty().trim()
+                            project.logger.lifecycle("")
+                            return input
+                        }
+
+                        val version = ask("Enter Minecraft version (or 'active')", versions + "active")
+                        val isActive = version.equals("active", ignoreCase = true)
+
+                        val loader = if (isActive) "" else ask("Enter loader", loaders)
+
+                        val site = ask("Enter publishing site", sites)
+                        val siteTask = sites.firstOrNull { it.equals(site, ignoreCase = true) }
+                            ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
+
+                        val taskPath = if (isActive) {
+                            ":$activeProject:publish${siteTask}Active"
+                        } else {
+                            ":$version-$loader:publish$siteTask"
+                        }
+
+                        project.logger.lifecycle("[Multiloader] Running: $taskPath")
+
+                        val isWindows = System.getProperty("os.name").lowercase().contains("win")
+                        val gradlew = if (isWindows) "gradlew.bat" else "./gradlew"
+
+                        val exitCode = ProcessBuilder(gradlew, taskPath)
+                            .directory(project.rootDir)
+                            .inheritIO()
+                            .start()
+                            .waitFor()
+
+                        if (exitCode != 0) {
+                            throw org.gradle.api.GradleException("[Multiloader] Task $taskPath failed with code $exitCode")
+                        }
                     }
                 }
             }
