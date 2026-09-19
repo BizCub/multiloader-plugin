@@ -209,6 +209,7 @@ open class MultiLoader(private val project: Project) {
     fun modProp(key: String) = prop("mod.$key") as String
     fun getProp(key: String) = prop(propName(key))
     fun setProp(key: String, value: Any?) = value.also { project.extra[versionExactlyProp(key)] = it }
+    fun getPropName(key: String) = propName(key)
 
     private fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
     private fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback

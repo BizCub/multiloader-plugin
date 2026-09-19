@@ -1,5 +1,6 @@
 package io.github.bizcub.multiloader
 
+import org.gradle.api.GradleException
 import org.gradle.api.Project
 import org.json.JSONArray
 import org.json.JSONObject
@@ -28,7 +29,13 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
                 if (version != "not_found") {
                     version.also { addToConfig(key, it) }
                 } else {
-                    (ml.getProp(key) as String).also { addToConfig(key, it) }
+                    val propName = ml.getPropName(key)
+                    val fallback = ml.getProp(key)
+                        ?: throw GradleException(
+                            "[Multiloader] Dependency '$key' not found on Modrinth " +
+                                    "and no fallback property '$propName' is defined"
+                        )
+                    fallback.also { addToConfig(key, it) }
                 }
             }
         }
