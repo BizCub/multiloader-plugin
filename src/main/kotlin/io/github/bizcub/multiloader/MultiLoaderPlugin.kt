@@ -826,7 +826,10 @@ open class MultiLoader(private val project: Project) {
                             return input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                         }
 
-                        val versionInputs = ask("Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')", versions + "active" + "all")
+                        val versionInputs = ask(
+                            "Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')",
+                            versions + "active" + "all"
+                        )
                         if (versionInputs.isEmpty()) {
                             throw org.gradle.api.GradleException("[Multiloader] No version entered")
                         }
@@ -880,17 +883,29 @@ open class MultiLoader(private val project: Project) {
                             }
                         }
 
+                        project.logger.lifecycle(
+                            "[Multiloader] Force publish if Modrinth already has the same version/changelog? (y / anything else)"
+                        )
+                        val force = (System.console()?.readLine() ?: readlnOrNull()).orEmpty().trim().lowercase()
+                        project.logger.lifecycle("")
+                        val forceFlag = "-Pmultiloader.forcePublish=${force == "y" || force == "yes"}"
+
                         val isWindows = System.getProperty("os.name").lowercase().contains("win")
                         val gradlew = if (isWindows) "gradlew.bat" else "./gradlew"
 
                         val paths = taskPaths.toList()
                         project.logger.lifecycle("[Multiloader] Running: ${paths.joinToString(" ")}")
 
-                        val exitCode = ProcessBuilder(listOf(gradlew) + paths)
+                        val childProcess = ProcessBuilder(listOf(gradlew) + paths + forceFlag)
                             .directory(project.rootDir)
                             .inheritIO()
                             .start()
-                            .waitFor()
+
+                        val hook = Thread { childProcess.destroy() }
+                        Runtime.getRuntime().addShutdownHook(hook)
+
+                        val exitCode = childProcess.waitFor()
+                        Runtime.getRuntime().removeShutdownHook(hook)
 
                         if (exitCode != 0) {
                             throw org.gradle.api.GradleException(
@@ -1000,9 +1015,22 @@ open class MultiLoader(private val project: Project) {
         if (versionConflict) problems.add("version '$latestVersion'")
         if (changelogConflict) problems.add("changelog")
 
-        project.logger.lifecycle("[Multiloader] WARNING: Modrinth already has the latest release with the same ${problems.joinToString(" and ")}.")
-        project.logger.lifecycle("[Multiloader] Continue publishing anyway? Type 'y' to force, anything else to abort:")
+        project.logger.lifecycle(
+            "[Multiloader] WARNING: Modrinth already has the latest release with the same ${problems.joinToString(" and ")}."
+        )
 
+        val forced = (project.findProperty("multiloader.forcePublish") as String?)?.lowercase()
+        if (forced != null) {
+            if (forced == "true" || forced == "y" || forced == "yes") {
+                project.logger.lifecycle("[Multiloader] forcePublish=true -> continuing despite duplicate.")
+                return
+            }
+            throw org.gradle.api.GradleException(
+                "[Multiloader] Publication aborted (forcePublish=$forced): duplicate version/changelog already exists on Modrinth."
+            )
+        }
+
+        project.logger.lifecycle("[Multiloader] Continue publishing anyway? Type 'y' to force, anything else to abort:")
         val answer = (System.console()?.readLine() ?: readlnOrNull()).orEmpty().trim().lowercase()
         if (answer != "y" && answer != "yes") {
             throw org.gradle.api.GradleException(
