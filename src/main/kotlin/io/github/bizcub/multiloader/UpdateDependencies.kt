@@ -79,7 +79,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
                     return true
                 }
             }
-            return gameVersion == mod.mcExact
+            return gameVersion == mod.mcExact || gameVersion == mod.mc
         }
 
         json.forEachIndexed { i, _ ->

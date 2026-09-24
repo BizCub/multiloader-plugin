@@ -84,19 +84,23 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
 open class MultiLoaderSettings {
     val fb = "fabric"; val fg = "forge"; val nf = "neoforge"
 
-    private val pendingVersions = mutableListOf<Pair<String, Array<out String>>>()
+    private val pendingVersions = mutableListOf<Triple<String, String, Array<out String>>>()
 
     fun match(version: String, vararg loaders: String) {
-        pendingVersions.add(version to loaders)
+        pendingVersions.add(Triple(version, version, loaders))
+    }
+
+    fun matchExact(version: String, exact: String, vararg loaders: String) {
+        pendingVersions.add(Triple(version, exact, loaders))
     }
 
     internal fun applyStonecutter(settings: Settings) {
         val stonecutter = settings.extensions.getByType<StonecutterSettingsExtension>()
 
         stonecutter.create(settings.rootProject) {
-            pendingVersions.forEach { (ver, loaders) ->
+            pendingVersions.forEach { (ver, exact, loaders) ->
                 loaders.forEach { loader ->
-                    version("$ver-$loader", ver)
+                    version("$exact-$loader", ver)
                 }
             }
         }
@@ -141,7 +145,7 @@ open class MultiLoader(private val project: Project) {
     val mod = Mod()
     inner class Mod {
         val mc: String get() = scc.version
-        val mcExact: String get() = propIf("version", mc)
+        val mcExact: String get() = propIf("version", scc.project.substringBeforeLast("-"))
         val loader: String get() = scc.project.substringAfterLast("-")
         val id: String get() = modProp("id")
         val idDashed: String get() = id.replace("_", "-")
@@ -213,8 +217,8 @@ open class MultiLoader(private val project: Project) {
 
     private fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
     private fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
-    private fun versionProp(key: String) = "${mod.mc}.$key"
-    private fun versionExactlyProp(key: String) = "${mod.mc}-${mod.loader}.$key"
+    private fun versionProp(key: String) = "${mod.mc}.$key"               // 26.3.key
+    private fun versionExactlyProp(key: String) = "${scc.project}.$key"   // 26.3-snapshot-5-fabric.key
 
     fun firstInit() {
         createDepFile()
@@ -1045,7 +1049,8 @@ open class MultiLoader(private val project: Project) {
         project.pluginManager.withPlugin("dev.kikugie.stonecutter") {
             val ext = project.extensions.findByType(StonecutterControllerExtension::class.java) ?: return@withPlugin
             ext.parameters {
-                val (version, loader) = current.project.split('-', limit = 2)
+                val loader = current.project.substringAfterLast('-')
+                val version = current.project.removeSuffix("-$loader")
                 properties.tags(version, loader)
                 constants.match(node.metadata.project.substringAfterLast('-'), "fabric", "neoforge", "forge")
                 swaps["mod_id"] = "\"${modProp("id")}\";"
@@ -1171,7 +1176,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun removeUnusedVersions() {
-        val usedVersions = sc.versions.map { it.version }.distinct()
+        val usedVersions = sc.versions.map { it.project.substringBeforeLast("-") }.distinct()
         updateDependencies.removeUnusedVersions(usedVersions)
     }
 
