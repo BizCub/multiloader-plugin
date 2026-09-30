@@ -99,8 +99,15 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         return try {
             val connection = URL("https://api.modrinth.com/v2/project/$id/version").openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
+            connection.connectTimeout = 10_000
+            connection.readTimeout = 10_000
             if (token.isNotBlank()) connection.setRequestProperty("Authorization", token)
             connection.setRequestProperty("User-Agent", "BizCub/multiloader-plugin")
+
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                connection.disconnect()
+                return null
+            }
 
             val response = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
@@ -109,7 +116,10 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             if (json.isEmpty) return null
 
             val obj = json.getJSONObject(0)
-            obj.optString("version_number") to obj.optString("changelog")
+            val version = obj.optString("version_number")
+            if (version.isBlank()) return null
+
+            version to obj.optString("changelog")
         } catch (e: Exception) {
             project.logger.lifecycle("[Multiloader] Failed to fetch Modrinth versions for conflict check: ${e.message}")
             null

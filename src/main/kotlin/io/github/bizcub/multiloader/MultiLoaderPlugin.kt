@@ -40,10 +40,7 @@ import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
-import org.gradle.kotlin.dsl.named
-import org.gradle.kotlin.dsl.support.serviceOf
 import org.gradle.language.jvm.tasks.ProcessResources
-import org.gradle.process.ExecOperations
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -679,7 +676,7 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
-        definitionFileConfigurationName("0 Publish Platform", "publishInteractive", "Publish Platform")
+        definitionFileConfigurationName("0 Publish Platform", "publishSelected", "Publish Platform")
         definitionFileConfigurationName("1 Publish Active", "publishAllActive", "Publish Platform")
         definitionFileConfigurationName("2 Publish All", "publishAllVersions", "Publish Platform")
 
@@ -812,111 +809,16 @@ open class MultiLoader(private val project: Project) {
                         removeUnusedVersions()
                     }
                 }
-                register("publishInteractive") {
+                register("publishSelected") {
                     group = "publishing"
                     val activeProject = scc.project
-                    doLast {
-                        val nodes    = sc.versions
-                        val versions = nodes.map { it.version }.distinct()
-                        val loaders  = nodes.map { it.project.substringAfterLast("-") }.distinct()
-                        val sites    = publishPlatforms
-
-                        fun ask(prompt: String, options: List<String>): List<String> {
-                            project.logger.lifecycle(
-                                "[Multiloader] $prompt (Possible values: ${options.joinToString(", ")}; comma-separated)"
-                            )
-                            val input = (System.console()?.readLine() ?: readlnOrNull()).orEmpty()
-                            project.logger.lifecycle("")
-                            return input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                        }
-
-                        val versionInputs = ask(
-                            "Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')",
-                            versions + "active" + "all"
-                        )
-                        if (versionInputs.isEmpty()) {
-                            throw org.gradle.api.GradleException("[Multiloader] No version entered")
-                        }
-
-                        val nonActivePresent = versionInputs.any { !it.equals("active", ignoreCase = true) }
-                        val loaderInputs = if (nonActivePresent) ask("Enter loader(s)", loaders) else emptyList()
-
-                        val siteInputs = ask("Enter publishing site(s)", sites)
-                        if (siteInputs.isEmpty()) {
-                            throw org.gradle.api.GradleException("[Multiloader] No site entered")
-                        }
-                        val siteTasks = siteInputs.map { site ->
-                            val matched = sites.firstOrNull { it.equals(site, ignoreCase = true) }
-                                ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
-                            realPublishTarget(matched)
-                        }
-
-                        fun resolveNodes(token: String, loader: String): List<StonecutterProject> = when {
-                            token.equals("all", ignoreCase = true) ->
-                                nodes.filter { it.project.substringAfterLast("-") == loader }
-
-                            token in versions ->
-                                nodes.filter { it.version == token && it.project.substringAfterLast("-") == loader }
-
-                            else -> nodes.filter { node ->
-                                runCatching { node.parsed.matches(token) }.getOrDefault(false) &&
-                                        node.project.substringAfterLast("-") == loader
-                            }
-                        }
-
-                        val taskPaths = LinkedHashSet<String>()
-                        versionInputs.forEach { token ->
-                            val isActive = token.equals("active", ignoreCase = true)
-                            siteTasks.forEach { siteTask ->
-                                if (isActive) {
-                                    taskPaths += ":$activeProject:publish${siteTask}Active"
-                                } else {
-                                    if (loaderInputs.isEmpty()) {
-                                        throw org.gradle.api.GradleException("[Multiloader] No loader entered for '$token'")
-                                    }
-                                    loaderInputs.forEach { loader ->
-                                        val resolved = resolveNodes(token, loader)
-                                        if (resolved.isEmpty()) {
-                                            throw org.gradle.api.GradleException(
-                                                "[Multiloader] No versions match '$token' for loader '$loader'"
-                                            )
-                                        }
-                                        resolved.forEach { node -> taskPaths += ":${node.project}:publish$siteTask" }
-                                    }
-                                }
-                            }
-                        }
-
-                        project.logger.lifecycle(
-                            "[Multiloader] Force publish if Modrinth already has the same version/changelog? (y / anything else)"
-                        )
-                        val force = (System.console()?.readLine() ?: readlnOrNull()).orEmpty().trim().lowercase()
-                        project.logger.lifecycle("")
-                        val forceFlag = "-Pmultiloader.forcePublish=${force == "y" || force == "yes"}"
-
-                        val isWindows = System.getProperty("os.name").lowercase().contains("win")
-                        val gradlew = if (isWindows) "gradlew.bat" else "./gradlew"
-
-                        val paths = taskPaths.toList()
-                        project.logger.lifecycle("[Multiloader] Running: ${paths.joinToString(" ")}")
-
-                        val childProcess = ProcessBuilder(listOf(gradlew) + paths + forceFlag)
-                            .directory(project.rootDir)
-                            .inheritIO()
-                            .start()
-
-                        val hook = Thread { childProcess.destroy() }
-                        Runtime.getRuntime().addShutdownHook(hook)
-
-                        val exitCode = childProcess.waitFor()
-                        Runtime.getRuntime().removeShutdownHook(hook)
-
-                        if (exitCode != 0) {
-                            throw org.gradle.api.GradleException(
-                                "[Multiloader] Publish failed with code $exitCode (${paths.joinToString(" ")})"
-                            )
-                        }
-                    }
+                    dependsOn(project.provider {
+                        resolveSelectedPublishPaths(activeProject)
+                    })
+                }
+                register("publishInteractive") {
+                    group = "publishing"
+                    dependsOn(named("publishSelected"))
                 }
                 register("publishAllActive") {
                     group = "publishing"
@@ -994,6 +896,97 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
+    private fun resolveSelectedPublishPaths(activeProject: String): List<String> {
+        val nodes    = sc.versions
+        val versions = nodes.map { it.version }.distinct()
+        val loaders  = nodes.map { it.project.substringAfterLast("-") }.distinct()
+        val sites    = publishPlatforms
+
+        fun ask(prompt: String, options: List<String>): List<String> {
+            project.logger.lifecycle(
+                "[Multiloader] $prompt (Possible values: ${options.joinToString(", ")}; comma-separated)"
+            )
+            val input = (System.console()?.readLine() ?: readlnOrNull()).orEmpty()
+            project.logger.lifecycle("")
+            return input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+
+        fun propOrAsk(propName: String, prompt: String, options: List<String>): List<String> {
+            val fromProp = (project.findProperty(propName) as? String)
+                ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            return if (!fromProp.isNullOrEmpty()) fromProp else ask(prompt, options)
+        }
+
+        val versionInputs = propOrAsk(
+            "multiloader.publish.versions",
+            "Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')",
+            versions + "active" + "all"
+        )
+        if (versionInputs.isEmpty()) {
+            throw org.gradle.api.GradleException(
+                "[Multiloader] No version entered. In IDEA use -Pmultiloader.publish.versions=..."
+            )
+        }
+
+        val nonActivePresent = versionInputs.any { !it.equals("active", ignoreCase = true) }
+        val loaderInputs = if (nonActivePresent)
+            propOrAsk("multiloader.publish.loaders", "Enter loader(s)", loaders)
+        else emptyList()
+
+        val siteInputs = propOrAsk("multiloader.publish.sites", "Enter publishing site(s)", sites)
+        if (siteInputs.isEmpty()) {
+            throw org.gradle.api.GradleException(
+                "[Multiloader] No site entered. In IDEA use -Pmultiloader.publish.sites=..."
+            )
+        }
+        val siteTasks = siteInputs.map { site ->
+            val matched = sites.firstOrNull { it.equals(site, ignoreCase = true) }
+                ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
+            realPublishTarget(matched)
+        }
+
+        fun resolveNodes(token: String, loader: String): List<StonecutterProject> = when {
+            token.equals("all", ignoreCase = true) ->
+                nodes.filter { it.project.substringAfterLast("-") == loader }
+
+            token in versions ->
+                nodes.filter { it.version == token && it.project.substringAfterLast("-") == loader }
+
+            else -> nodes.filter { node ->
+                runCatching { node.parsed.matches(token) }.getOrDefault(false) &&
+                        node.project.substringAfterLast("-") == loader
+            }
+        }
+
+        val taskPaths = LinkedHashSet<String>()
+        versionInputs.forEach { token ->
+            val isActive = token.equals("active", ignoreCase = true)
+            siteTasks.forEach { siteTask ->
+                if (isActive) {
+                    taskPaths += ":$activeProject:publish${siteTask}Active"
+                } else {
+                    if (loaderInputs.isEmpty()) {
+                        throw org.gradle.api.GradleException("[Multiloader] No loader entered for '$token'")
+                    }
+                    loaderInputs.forEach { loader ->
+                        val resolved = resolveNodes(token, loader)
+                        if (resolved.isEmpty()) {
+                            throw org.gradle.api.GradleException(
+                                "[Multiloader] No versions match '$token' for loader '$loader'"
+                            )
+                        }
+                        resolved.forEach { node -> taskPaths += ":${node.project}:publish$siteTask" }
+                    }
+                }
+            }
+        }
+
+        project.logger.lifecycle("[Multiloader] Selected ${taskPaths.size} publish task(s):")
+        taskPaths.forEachIndexed { i, p -> project.logger.lifecycle("[Multiloader]   ${i + 1}. $p") }
+
+        return taskPaths.toList()
+    }
+
     private fun checkPublishConflict() {
         val id = mod.modrinth
         if (id.isBlank()) return
@@ -1006,6 +999,8 @@ open class MultiLoader(private val project: Project) {
 
         val latest = updateDependencies.getModrinthLatestVersion(id, token) ?: return
         val (latestVersion, latestChangelog) = latest
+
+        if (latestVersion.isBlank()) return
 
         val newVersion = project.version.toString()
         val newChangelog = processChangelog().trim()
