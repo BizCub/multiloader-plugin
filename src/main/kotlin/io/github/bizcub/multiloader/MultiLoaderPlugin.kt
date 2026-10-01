@@ -911,33 +911,25 @@ open class MultiLoader(private val project: Project) {
             return input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         }
 
-        fun propOrAsk(propName: String, prompt: String, options: List<String>): List<String> {
-            val fromProp = (project.findProperty(propName) as? String)
-                ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
-            return if (!fromProp.isNullOrEmpty()) fromProp else ask(prompt, options)
-        }
-
-        val versionInputs = propOrAsk(
-            "multiloader.publish.versions",
+        val versionInputs = if (versions.size == 1) {
+            versions
+        } else ask(
             "Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')",
             versions + "active" + "all"
         )
         if (versionInputs.isEmpty()) {
-            throw org.gradle.api.GradleException(
-                "[Multiloader] No version entered. In IDEA use -Pmultiloader.publish.versions=..."
-            )
+            throw org.gradle.api.GradleException("[Multiloader] No version entered")
         }
 
         val nonActivePresent = versionInputs.any { !it.equals("active", ignoreCase = true) }
-        val loaderInputs = if (nonActivePresent)
-            propOrAsk("multiloader.publish.loaders", "Enter loader(s)", loaders)
-        else emptyList()
+        val loaderRaw = if (nonActivePresent) ask("Enter loader(s) ('all' or comma-separated)", loaders + "all") else emptyList()
+        val loaderInputs = if (loaderRaw.any { it.equals("all", ignoreCase = true) }) loaders else loaderRaw
 
-        val siteInputs = propOrAsk("multiloader.publish.sites", "Enter publishing site(s)", sites)
+        val siteInputs = if (sites.size == 1) {
+            sites
+        } else ask("Enter publishing site(s)", sites)
         if (siteInputs.isEmpty()) {
-            throw org.gradle.api.GradleException(
-                "[Multiloader] No site entered. In IDEA use -Pmultiloader.publish.sites=..."
-            )
+            throw org.gradle.api.GradleException("[Multiloader] No site entered")
         }
         val siteTasks = siteInputs.map { site ->
             val matched = sites.firstOrNull { it.equals(site, ignoreCase = true) }
@@ -971,14 +963,20 @@ open class MultiLoader(private val project: Project) {
                     loaderInputs.forEach { loader ->
                         val resolved = resolveNodes(token, loader)
                         if (resolved.isEmpty()) {
-                            throw org.gradle.api.GradleException(
-                                "[Multiloader] No versions match '$token' for loader '$loader'"
+                            project.logger.lifecycle(
+                                "[Multiloader] Skipping '$token' for loader '$loader' (no matching version)"
                             )
+                            return@forEach
                         }
                         resolved.forEach { node -> taskPaths += ":${node.project}:publish$siteTask" }
                     }
                 }
             }
+        }
+        if (taskPaths.isEmpty()) {
+            throw org.gradle.api.GradleException(
+                "[Multiloader] Nothing to publish: no version/loader combination matched"
+            )
         }
 
         project.logger.lifecycle("[Multiloader] Selected ${taskPaths.size} publish task(s):")
