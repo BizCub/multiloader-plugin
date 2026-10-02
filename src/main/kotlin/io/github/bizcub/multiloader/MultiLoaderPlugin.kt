@@ -927,7 +927,7 @@ open class MultiLoader(private val project: Project) {
 
         val siteInputs = if (sites.size == 1) {
             sites
-        } else ask("Enter publishing site(s)", sites)
+        } else ask("Enter publishing site(s)", sites.map { it.lowercase() })
         if (siteInputs.isEmpty()) {
             throw org.gradle.api.GradleException("[Multiloader] No site entered")
         }
