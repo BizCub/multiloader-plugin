@@ -309,12 +309,20 @@ open class MultiLoader(private val project: Project) {
         to: String = "",
         loader: String = ""
     ) {
+        fun mapLatest(value: String) = when (value) {
+            "latest" -> "latestRelease"
+            "latestSnapshot" -> "latest"
+            else -> value
+        }
+
+        val from1 = mapLatest(from)
+        val to1 = mapLatest(to)
         val loader1 = if (loader.isEmpty()) "" else "-$loader"
 
-        if (from.isNotEmpty())
-            project.extra["$version$loader1.pub-start"] = from
-        if (to.isNotEmpty())
-            project.extra["$version$loader1.pub-end"] = to
+        if (from1.isNotEmpty())
+            project.extra["$version$loader1.pub-start"] = from1
+        if (to1.isNotEmpty())
+            project.extra["$version$loader1.pub-end"] = to1
     }
 
     fun addDependency(
