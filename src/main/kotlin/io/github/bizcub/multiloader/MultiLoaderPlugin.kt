@@ -39,14 +39,31 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-class MultiLoaderPlugin : Plugin<Project> {
-    override fun apply(project: Project) {
+class MultiLoaderPlugin : Plugin<ExtensionAware> {
+    override fun apply(target: ExtensionAware) {
         val version = javaClass.`package`.implementationVersion ?: "unknown"
-        val multiloader = project.extensions.create("multiloader", MultiLoader::class.java, project)
-        project.logger.lifecycle("Running MultiLoader $version")
 
-        if (project == project.rootProject) multiloader.firstInit()
-        else multiloader.init()
+        when (target) {
+            is Settings -> {
+                Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
+
+                target.rootProject.name = target.extra["mod.id"] as String
+
+                val loaders = listOf("common", "fabric", "forge", "neoforge")
+                loaders.forEach { target.include(it) }
+
+                target.gradle.allprojects {
+                    pluginManager.apply(MultiLoaderPlugin::class.java)
+                }
+            }
+            is Project -> {
+                val multiloader = target.extensions.create("multiloader", MultiLoader::class.java, target)
+                target.logger.lifecycle("Running MultiLoader $version")
+
+                if (target == target.rootProject) multiloader.firstInit()
+                else multiloader.init()
+            }
+        }
     }
 }
 
@@ -788,7 +805,13 @@ open class MultiLoader(private val project: Project) {
             isCommon   -> project.pluginManager.apply("fabric-loom")
             isFabric   -> project.pluginManager.apply("fabric-loom")
             isNeoForge -> project.pluginManager.apply("net.neoforged.moddev")
-            else       -> project.pluginManager.apply("net.minecraftforge.gradle")
+            else -> {
+                project.pluginManager.apply("net.minecraftforge.gradle")
+                project.extensions.getByType<MinecraftExtensionForProject>().runs {
+                    register("client") { workingDir.set(clientRunFile) }
+                    register("server") { workingDir.set(serverRunFile) }
+                }
+            }
         }
 
         project.pluginManager.apply("java")
@@ -826,12 +849,20 @@ open class MultiLoader(private val project: Project) {
 
         project.dependencies {
             if (!isCommon) add("implementation", project.project(":common"))
-            if (isCommon || isFabric) "minecraft"("com.mojang:minecraft:${mod.mc}")
+
+            if (isCommon || isFabric) {
+                "minecraft"("com.mojang:minecraft:${mod.mc}")
+                add(if (isCommon) "compileOnly" else "implementation", "net.fabricmc:fabric-loader:${getDep("fabric")}")
+            }
 
             if (isForge) {
                 val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
                 "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
                 "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
+
+                val commonMain = project.rootProject.project(":common")
+                    .extensions.getByType<SourceSetContainer>()["main"]
+                add("compileOnly", commonMain.output)
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
@@ -885,7 +916,6 @@ open class MultiLoader(private val project: Project) {
 
     private fun configureForge() {
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
-
         minecraft.apply {
             mappings("official", mod.mc)
             //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
@@ -897,8 +927,6 @@ open class MultiLoader(private val project: Project) {
                         getExtraSourceSet()?.let { ess -> register(ess.name) { source(ess) } }
                     }
                 }
-                register("client") { workingDir.set(clientRunFile) }
-                register("server") { workingDir.set(serverRunFile) }
             }
         }
     }
@@ -910,9 +938,14 @@ open class MultiLoader(private val project: Project) {
         project.extensions.configure<NeoForgeExtension> {
             version = getDep("neoforge")
             //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            val commonMain = project.rootProject.project(":common")
+                .extensions.getByType<SourceSetContainer>().named("main").get()
             mods {
-                register("main") { sourceSet(getSourceSets().named("main").get()) }
-                getExtraSourceSet()?.let { ess -> register(ess.name) { sourceSet(ess) } }
+                register("main") {
+                    sourceSet(getSourceSets().named("main").get())
+                    sourceSet(commonMain)
+                    getExtraSourceSet()?.let { ess -> sourceSet(ess) }
+                }
             }
             runs {
                 configureEach { disableIdeRun() }
