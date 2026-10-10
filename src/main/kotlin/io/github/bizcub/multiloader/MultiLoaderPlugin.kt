@@ -119,9 +119,8 @@ open class MultiLoader(private val project: Project) {
     private val badges = mutableListOf<String>()
 
     private val rootDir: File get() = project.rootProject.projectDir
-    private val resourcesDir: File get() = project.rootProject.file("src/main/resources")
-    private val buildResourcesDir: File get() = project.rootProject.file("build/resources/main")
-    private fun loaderBuildResourcesDir(loader: String): File = project.rootProject.file("$loader/build/resources/main")
+    private val resourcesDir: File get() = project.rootProject.project(":common").file("src/main/resources")
+    private val buildResourcesDir: File get() = project.rootProject.project(":common").file("build/resources/main")
 
     val clientRunFile: File get() = project.rootProject.file("run/client")
     val serverRunFile: File get() = project.rootProject.file("run/server")
@@ -660,27 +659,23 @@ open class MultiLoader(private val project: Project) {
             return changed
         }
 
-        fun process(targetDir: File, fileName: String, path: String = "", escapeNewLines: Boolean = false) {
-            if (resourcesDir.resolve(path).resolve(fileName).exists()) return
-            targetDir.resolve(path).mkdirs()
-            targetDir.resolve(path).resolve(fileName)
-                .writeText(getChangedResource("mod/$fileName", escapeNewLines))
+        fun process(fileName: String, path: String = "", escapeNewLines: Boolean = false) {
+            if (!resourcesDir.resolve(path).resolve(fileName).exists()) {
+                buildResourcesDir.resolve(path).resolve(fileName)
+                    .writeText(getChangedResource("mod/$fileName", escapeNewLines))
+            }
         }
 
-        val fabricDir = loaderBuildResourcesDir("fabric")
-        val forgeDir = loaderBuildResourcesDir("forge")
-        val neoforgeDir = loaderBuildResourcesDir("neoforge")
-
-        process(forgeDir, "pack.mcmeta")
-        process(fabricDir, "fabric.mod.json", escapeNewLines = true)
-        process(forgeDir, "mods.toml", "META-INF")
-        process(neoforgeDir, "neoforge.mods.toml", "META-INF")
+        process("pack.mcmeta")
+        process("fabric.mod.json", escapeNewLines = true)
+        process("mods.toml", "META-INF")
+        process("neoforge.mods.toml", "META-INF")
     }
 
     private fun mixinConfigRegistration() {
         listOf(
-            loaderBuildResourcesDir("forge").resolve("META-INF/mods.toml"),
-            loaderBuildResourcesDir("neoforge").resolve("META-INF/neoforge.mods.toml")
+            buildResourcesDir.resolve("META-INF/mods.toml"),
+            buildResourcesDir.resolve("META-INF/neoforge.mods.toml")
         ).forEach { tomlFile ->
             if (!tomlFile.exists()) return@forEach
 
@@ -702,7 +697,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun generateFabricModJson() {
-        val jsonFile = loaderBuildResourcesDir("fabric").resolve("fabric.mod.json")
+        val jsonFile = buildResourcesDir.resolve("fabric.mod.json")
         if (!jsonFile.exists()) return
 
         val classes = analyzeJavaSources().toMutableList()
@@ -874,16 +869,12 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureCommon() {
-        val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
-        loom.apply {
-            if (isMainCTFileExist()) accessWidenerPath.set(awBuildFile)
-        }
     }
 
     private fun configureFabric() {
         val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
         loom.apply {
-            if (isMainCTFileExist()) accessWidenerPath.set(awBuildFile)
+            //if (isMainCTFileExist()) accessWidenerPath.set(awBuildFile)
             runConfigs {
                 getExtraSourceSet()?.let { ess -> configureEach { sourceSet = ess.name } }
                 getByName("client") { runDirectory.set(clientRunFile) }
@@ -897,7 +888,7 @@ open class MultiLoader(private val project: Project) {
 
         minecraft.apply {
             mappings("official", mod.mc)
-            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
 
             runs {
                 configureEach {
@@ -918,7 +909,7 @@ open class MultiLoader(private val project: Project) {
         project.pluginManager.apply("net.neoforged.moddev")
         project.extensions.configure<NeoForgeExtension> {
             version = getDep("neoforge")
-            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
             mods {
                 register("main") { sourceSet(getSourceSets().named("main").get()) }
                 getExtraSourceSet()?.let { ess -> register(ess.name) { sourceSet(ess) } }
