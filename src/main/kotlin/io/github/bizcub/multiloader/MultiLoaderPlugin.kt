@@ -121,6 +121,7 @@ open class MultiLoader(private val project: Project) {
     private val rootDir: File get() = project.rootProject.projectDir
     private val resourcesDir: File get() = project.rootProject.file("src/main/resources")
     private val buildResourcesDir: File get() = project.rootProject.file("build/resources/main")
+    private fun loaderBuildResourcesDir(loader: String): File = project.rootProject.file("$loader/build/resources/main")
 
     val clientRunFile: File get() = project.rootProject.file("run/client")
     val serverRunFile: File get() = project.rootProject.file("run/server")
@@ -659,23 +660,27 @@ open class MultiLoader(private val project: Project) {
             return changed
         }
 
-        fun process(fileName: String, path: String = "", escapeNewLines: Boolean = false) {
-            if (!resourcesDir.resolve(path).resolve(fileName).exists()) {
-                buildResourcesDir.resolve(path).resolve(fileName)
-                    .writeText(getChangedResource("mod/$fileName", escapeNewLines))
-            }
+        fun process(targetDir: File, fileName: String, path: String = "", escapeNewLines: Boolean = false) {
+            if (resourcesDir.resolve(path).resolve(fileName).exists()) return
+            targetDir.resolve(path).mkdirs()
+            targetDir.resolve(path).resolve(fileName)
+                .writeText(getChangedResource("mod/$fileName", escapeNewLines))
         }
 
-        process("pack.mcmeta")
-        process("fabric.mod.json", escapeNewLines = true)
-        process("mods.toml", "META-INF")
-        process("neoforge.mods.toml", "META-INF")
+        val fabricDir = loaderBuildResourcesDir("fabric")
+        val forgeDir = loaderBuildResourcesDir("forge")
+        val neoforgeDir = loaderBuildResourcesDir("neoforge")
+
+        process(forgeDir, "pack.mcmeta")
+        process(fabricDir, "fabric.mod.json", escapeNewLines = true)
+        process(forgeDir, "mods.toml", "META-INF")
+        process(neoforgeDir, "neoforge.mods.toml", "META-INF")
     }
 
     private fun mixinConfigRegistration() {
         listOf(
-            buildResourcesDir.resolve("META-INF/mods.toml"),
-            buildResourcesDir.resolve("META-INF/neoforge.mods.toml")
+            loaderBuildResourcesDir("forge").resolve("META-INF/mods.toml"),
+            loaderBuildResourcesDir("neoforge").resolve("META-INF/neoforge.mods.toml")
         ).forEach { tomlFile ->
             if (!tomlFile.exists()) return@forEach
 
@@ -697,7 +702,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun generateFabricModJson() {
-        val jsonFile = buildResourcesDir.resolve("fabric.mod.json")
+        val jsonFile = loaderBuildResourcesDir("fabric").resolve("fabric.mod.json")
         if (!jsonFile.exists()) return
 
         val classes = analyzeJavaSources().toMutableList()
@@ -827,12 +832,6 @@ open class MultiLoader(private val project: Project) {
         project.dependencies {
             if (!isCommon) add("implementation", project.project(":common"))
             if (isCommon || isFabric) "minecraft"("com.mojang:minecraft:${mod.mc}")
-
-            if (isCommon) {
-                val mixin = "net.fabricmc:sponge-mixin:0.17.4+mixin.0.8.7"
-                "compileOnly"(mixin)
-                "annotationProcessor"(mixin)
-            }
 
             if (isForge) {
                 val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
