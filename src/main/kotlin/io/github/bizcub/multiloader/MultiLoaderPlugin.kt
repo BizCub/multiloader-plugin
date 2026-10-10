@@ -168,7 +168,6 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun replayLoaderBlock() {
-        if (isCommon) return
         val root = project.rootProject
         if (!root.extra.has("multiloader.loaderBlock")) return
         @Suppress("UNCHECKED_CAST")
@@ -828,10 +827,17 @@ open class MultiLoader(private val project: Project) {
         project.dependencies {
             if (!isCommon) add("implementation", project.project(":common"))
             if (isCommon || isFabric) "minecraft"("com.mojang:minecraft:${mod.mc}")
+
+            if (isCommon) {
+                val mixin = "net.fabricmc:sponge-mixin:0.17.4+mixin.0.8.7"
+                "compileOnly"(mixin)
+                "annotationProcessor"(mixin)
+            }
+
             if (isForge) {
                 val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
                 "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
-                if (mod.mc >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
+                "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
