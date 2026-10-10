@@ -5,17 +5,11 @@ import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.StaticJavaParser
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import dev.kikugie.fletching_table.extension.FletchingTableExtension
-import dev.kikugie.stonecutter.build.StonecutterBuildExtension
-import dev.kikugie.stonecutter.controller.StonecutterControllerExtension
-import dev.kikugie.stonecutter.data.StonecutterProject
-import dev.kikugie.stonecutter.settings.StonecutterSettingsExtension
 import me.modmuss50.mpp.ModPublishExtension
 import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import net.fabricmc.loom.api.LoomGradleExtensionAPI
 import net.minecraftforge.gradle.ForgeGradleExtension
 import net.minecraftforge.gradle.MinecraftExtensionForProject
-import net.minecraftforge.jarjar.gradle.JarJarExtension
-import net.minecraftforge.renamer.gradle.RenamerExtension
 import net.neoforged.moddevgradle.dsl.NeoForgeExtension
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
@@ -45,62 +39,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-fun String.upperCaseFirst() = replaceFirstChar { it.uppercaseChar() }
-fun String.lowerCaseFirst() = replaceFirstChar { it.lowercaseChar() }
-
-class MultiLoaderPlugin : Plugin<ExtensionAware> {
-    override fun apply(project: ExtensionAware) {
+class MultiLoaderPlugin : Plugin<Project> {
+    override fun apply(project: Project) {
         val version = javaClass.`package`.implementationVersion ?: "unknown"
+        val multiloader = project.extensions.create("multiloader", MultiLoader::class.java, project)
+        project.logger.lifecycle("Running MultiLoader $version")
 
-        when (project) {
-            is Settings -> {
-                project.pluginManager.apply("dev.kikugie.stonecutter")
-
-                val multiloader = project.extensions.create("multiloader", MultiLoaderSettings::class.java)
-
-                Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
-                project.rootProject.name = project.extra["mod.name"] as String
-
-                project.gradle.settingsEvaluated {
-                    multiloader.applyStonecutter(project)
-                }
-            }
-            is Project -> {
-                val multiloader = project.extensions.create("multiloader", MultiLoader::class.java)
-
-                project.logger.lifecycle("Running MultiLoader $version")
-
-                val isRootProject = project == project.rootProject
-                if (isRootProject) multiloader.firstInit()
-                if (!isRootProject) multiloader.init()
-            }
-        }
-    }
-}
-
-open class MultiLoaderSettings {
-    val fb = "fabric"; val fg = "forge"; val nf = "neoforge"
-
-    private val pendingVersions = mutableListOf<Triple<String, String, Array<out String>>>()
-
-    fun match(version: String, vararg loaders: String) {
-        pendingVersions.add(Triple(version, version, loaders))
-    }
-
-    fun matchExact(version: String, exact: String, vararg loaders: String) {
-        pendingVersions.add(Triple(version, exact, loaders))
-    }
-
-    internal fun applyStonecutter(settings: Settings) {
-        val stonecutter = settings.extensions.getByType<StonecutterSettingsExtension>()
-
-        stonecutter.create(settings.rootProject) {
-            pendingVersions.forEach { (ver, exact, loaders) ->
-                loaders.forEach { loader ->
-                    version("$exact-$loader", ver)
-                }
-            }
-        }
+        if (project == project.rootProject) multiloader.firstInit()
+        else multiloader.init()
     }
 }
 
@@ -108,18 +54,21 @@ open class MultiLoader(private val project: Project) {
     interface NeoForgeMutex : BuildService<BuildServiceParameters.None>
 
     val reps = mutableListOf<Repository>()
+
     class Repository(val repository: String)
 
     val deps = mutableListOf<Dependency>()
+
     class Dependency(val configuration: String, val dependency: String) {
         val id = dependency.split(":")[1]
-        val modConfiguration = "mod${configuration.upperCaseFirst()}"
     }
 
     val eModules = mutableListOf<Module>()
+
     class Module(val module: String)
 
     val mrEnvs by lazy { MREnvs() }
+
     class MREnvs {
         val clientOnly = ModrinthEnvironment.CLIENT_ONLY
         val serverOnly = ModrinthEnvironment.SERVER_ONLY
@@ -133,6 +82,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     val cfEnvs = CFEnvs()
+
     class CFEnvs {
         val client = "client"
         val server = "server"
@@ -140,10 +90,10 @@ open class MultiLoader(private val project: Project) {
     }
 
     val mod = Mod()
+
     inner class Mod {
-        val mc: String get() = scc.version
-        val mcExact: String get() = propIf("version", scc.project.substringBeforeLast("-"))
-        val loader: String get() = scc.project.substringAfterLast("-")
+        val mc: String get() = modProp("mc")
+        val loader: String get() = project.name
         val id: String get() = modProp("id")
         val idDashed: String get() = id.replace("_", "-")
         val name: String get() = modProp("name")
@@ -160,17 +110,7 @@ open class MultiLoader(private val project: Project) {
     class ClassInfo(val entrypointName: String, val classFilePath: String)
 
     private val updateDependencies = UpdateDependencies(project, this)
-    private val hotfixesList = listOf("1.21.10", "1.21.8", "1.21.7", "1.21.3", "1.21.1", "1.20.6", "1.20.4", "1.20.1", "1.19.2", "1.19.1", "1.18.1")
-    private val publishPlatforms = listOf("All", "Modrinth", "Curseforge", "Github")
-    private val publishMaven = listOf("ToMavenLocal")
-    private val mainTasks = listOf(
-        Pair("0 Run Client", "runActiveClient"),
-        Pair("0 Run Server", "runActiveServer"),
-
-        Pair("0 Remove Keys", "removeDependencyKeys"),
-        Pair("0 Clear Cache", "clearCache"),
-        Pair("0 Remove Unused", "removeUnusedVersions")
-    )
+    private val loaderProjects = listOf("common", "fabric", "forge", "neoforge")
     private val entrypoints = mutableListOf(
         "client" to "net.fabricmc.api.ClientModInitializer",
         "main" to "net.fabricmc.api.ModInitializer",
@@ -178,105 +118,71 @@ open class MultiLoader(private val project: Project) {
     )
     private val badges = mutableListOf<String>()
 
-    private val buildDir: File get() = project.file("build")
+    private val rootDir: File get() = project.rootProject.projectDir
     private val resourcesDir: File get() = project.rootProject.file("src/main/resources")
-    private val buildResourcesDir: File get() = buildDir.resolve("resources/main")
-    private val buildResourcesDirForge: File get() = buildDir.resolve("sourceSets/main")
+    private val buildResourcesDir: File get() = project.rootProject.file("build/resources/main")
 
     val clientRunFile: File get() = project.rootProject.file("run/client")
     val serverRunFile: File get() = project.rootProject.file("run/server")
     val iconFile: File get() = resourcesDir.resolve("icon.png")
     val mixinFile: File get() = resourcesDir.resolve("${mod.idDashed}.mixins.json")
     val ctMainFile: File get() = resourcesDir.resolve("${mod.idDashed}.ct")
-    val ctFabricFile: File get() = buildResourcesDir.resolve("${mod.idDashed}.ct")
-    val atForgeFile: File get() = buildResourcesDirForge.resolve("META-INF/accesstransformer.cfg")
-    val atNeoForgeFile: File get() = buildResourcesDir.resolve("META-INF/accesstransformer.cfg")
+    val awBuildFile: File get() = buildResourcesDir.resolve("${mod.idDashed}.ct")
+    val atBuildFile: File get() = buildResourcesDir.resolve("META-INF/accesstransformer.cfg")
 
-    val sc get() = project.extensions.getByType<StonecutterBuildExtension>()
-    val scc get() = sc.current
-    val scp get() = scc.parsed
-
-    val isFabric: Boolean get() = mod.loader == "fabric"
-    val isForge: Boolean get() = mod.loader == "forge"
-    val isNeoForge: Boolean get() = mod.loader == "neoforge"
-    val isObfuscated: Boolean get() = scp < "26.1"
-    val isForgeLegacy: Boolean get() = scp < "1.20.5"
+    val isCommon: Boolean get() = project.name == "common"
+    val isFabric: Boolean get() = project.name == "fabric"
+    val isForge: Boolean get() = project.name == "forge"
+    val isNeoForge: Boolean get() = project.name == "neoforge"
 
     val playerName: String get() = "BizarreCube"
     val playerUUID: String get() = updateDependencies.getPlayerUUIDbyName(playerName)
-    val fabricJarTask: String get() = if (!isObfuscated) "jar" else "remapJar"
 
     fun prop(key: String): String? = project.findProperty(key)?.toString()
     fun modProp(key: String) = prop("mod.$key") as String
     fun getProp(key: String) = prop(propName(key))
-    fun setProp(key: String, value: Any?) = value.also { project.extra[versionExactlyProp(key)] = it }
+    fun setProp(key: String, value: Any?) = value.also { project.extra[propName(key)] = it }
     fun getPropName(key: String) = propName(key)
 
-    private fun propName(key: String) = if (prop(versionExactlyProp(key)) != null) versionExactlyProp(key) else versionProp(key)
-    private fun propIf(key: String, fallback: String) = prop(propName(key)) ?: fallback
-    private fun versionProp(key: String) = "${mod.mc}.$key"               // 26.3.key
-    private fun versionExactlyProp(key: String) = "${scc.project}.$key"   // 26.3-snapshot-5-fabric.key
+    private fun propName(key: String) = if (prop("${mod.loader}.$key") != null) "${mod.loader}.$key" else key
 
     fun firstInit() {
         createDepFile()
         setCustomProjectIcon()
-        setStonecutterParameters()
         updateOrCreateIssueTemplates()
         updateOrCreateChangelogFile()
         updateOrCreateGitIgnoreFile()
         setServerProperties()
+        rootInit()
     }
 
     fun init() {
         neoforgeFix()
-        access()
-        setProperties()
         configureInit()
     }
 
-    private fun afterEvaluate() {
-        configureFabric()
-        configureForge()
-        configureNeoForge()
-        configureCommon()
-        configureTasks()
-        configureModPublication()
+    private var loaderBlock: (MultiLoader.() -> Unit)? = null
+
+    fun configureLoaders(block: MultiLoader.() -> Unit) {
+        project.rootProject.extra["multiloader.loaderBlock"] = block
     }
 
-    private var resourcesGenerated = false
-
-    private fun afterProcessResources() {
-        if (!resourcesGenerated) {
-            generateModMetadata()
-            mixinConfigRegistration()
-            generateFabricModJson()
-            resourcesGenerated = true
-        }
-        refmapRegister()
-    }
-
-    private fun afterFinishBuild() {
-        createRunConfiguration()
+    private fun replayLoaderBlock() {
+        if (isCommon) return
+        val root = project.rootProject
+        if (!root.extra.has("multiloader.loaderBlock")) return
+        @Suppress("UNCHECKED_CAST")
+        val block = root.extra["multiloader.loaderBlock"] as MultiLoader.() -> Unit
+        this.block()
     }
 
     fun addSourceSet(name: String) {
         val sourceSets = getSourceSets()
-
         sourceSets.create(name) {
             java {
                 compileClasspath += sourceSets["main"].compileClasspath + sourceSets["main"].output
                 runtimeClasspath += sourceSets["main"].runtimeClasspath + sourceSets["main"].output
             }
-        }
-    }
-
-    fun setBuiltFile(builtFile: Provider<RegularFile>) {
-        publishMods {
-            file.set(builtFile)
-        }
-
-        project.tasks.named<Copy>("buildAllMain") {
-            from(builtFile)
         }
     }
 
@@ -301,28 +207,6 @@ open class MultiLoader(private val project: Project) {
 
     fun addBadges(vararg newBadges: String) {
         badges.addAll(newBadges)
-    }
-
-    fun versionRange(
-        version: String,
-        from: String = "",
-        to: String = "",
-        loader: String = ""
-    ) {
-        fun mapLatest(value: String) = when (value) {
-            "latest" -> "latestRelease"
-            "latestSnapshot" -> "latest"
-            else -> value
-        }
-
-        val from1 = mapLatest(from)
-        val to1 = mapLatest(to)
-        val loader1 = if (loader.isEmpty()) "" else "-$loader"
-
-        if (from1.isNotEmpty())
-            project.extra["$version$loader1.pub-start"] = from1
-        if (to1.isNotEmpty())
-            project.extra["$version$loader1.pub-end"] = to1
     }
 
     fun addDependency(
@@ -367,7 +251,7 @@ open class MultiLoader(private val project: Project) {
     fun getDep(key: String, useId: Boolean = false): String {
         val dep = updateDependencies.getDep(key, useId)
 
-        if (key == "fabric") {
+        if (key == "fabric" && isFabric) {
             project.configurations.matching { it.name.endsWith("implementation", true) }.configureEach {
                 resolutionStrategy.force("net.fabricmc:fabric-loader:$dep")
             }
@@ -376,60 +260,24 @@ open class MultiLoader(private val project: Project) {
         return dep
     }
 
-    fun isMainCTFileExist(): Boolean {
-        return ctMainFile.exists() && ((isFabric && ctFabricFile.exists()) || (isForge && atForgeFile.exists()) || (isNeoForge && atNeoForgeFile.exists()))
-    }
+    fun isMainCTFileExist(): Boolean = ctMainFile.exists()
 
-    fun getMinCompatVersion(version: String): String {
-        fun checkVersion(version: String): String {
-            return if (sc.eval(version, ">=26.1")) {
-                if (version.count { it == '.' } >= 2) {
-                    version.reversed().split(".", limit = 2).last().reversed()
-                } else version
-            } else {
-                if (hotfixesList.contains(version)) {
-                    if (version.count { it == '.' } >= 2) {
-                        val minorVers = version.substringAfterLast(".").toInt() - 1
-                        val minorVersStr = if (minorVers == 0) "" else ".$minorVers"
-                        "${version.reversed().split(".", limit = 2).last().reversed()}$minorVersStr"
-                    } else version
-                } else version
-            }
-        }
+    private fun getSourceSets(): SourceSetContainer =
+        project.extensions.getByType<SourceSetContainer>()
 
-        var tempVersion = checkVersion(version)
-        if (version == tempVersion) {
-            return version
-        } else {
-            while (true) {
-                if (tempVersion == checkVersion(tempVersion)) {
-                    return tempVersion
-                } else {
-                    tempVersion = checkVersion(tempVersion)
-                }
-            }
-        }
-    }
-
-    private fun getSourceSets(): SourceSetContainer {
-        return project.extensions.getByType<SourceSetContainer>()
-    }
-
-    private fun getExtraSourceSet(): SourceSet? {
-        return if (getSourceSets().count() > 2)
-            getSourceSets() .first { it.name != "main" && it.name != "test" }
-        else
-            null
-    }
+    private fun getExtraSourceSet(): SourceSet? =
+        if (getSourceSets().count() > 2)
+            getSourceSets().first { it.name != "main" && it.name != "test" }
+        else null
 
     private fun realPublishTarget(platform: String) = if (platform == "All") "Mods" else platform
 
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
-        project.extensions.configure("publishMods", block)
+        project.rootProject.extensions.configure("publishMods", block)
     }
 
     private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
-        project.extensions.configure<ModPublishExtension>("publishMods") {
+        project.rootProject.extensions.configure<ModPublishExtension>("publishMods") {
             modrinth {
                 when (requirement) {
                     "requires" -> requires(mrSlug)
@@ -445,72 +293,12 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private fun getPublishVersion(version: String): List<String> {
-
-        fun calculate(version: String): List<String> {
-            fun add(int: Int): Int {
-                return int + 1
-            }
-
-            fun remove(int: Int): Int {
-                return if (int - 1 >= 0) {
-                    int - 1
-                } else int
-            }
-
-            val split = version.split(".")
-            val strVersion = "${split[0]}.${split[1]}"
-            val pubVersion = if (split.count() != 2) {
-                split[2].toInt()
-            } else 0
-
-            return listOf("$strVersion.${remove(pubVersion)}", "$strVersion.${add(pubVersion)}")
-        }
-
-        if (!isObfuscated) {
-            val allVersionsList = updateDependencies.getMinecraftVersionList("https://piston-meta.mojang.com/mc/game/version_manifest.json")
-
-            val list = mutableListOf<String>()
-            val publishVersion = if (version.split(".").count() == 3) {
-                version.substring(0, version.length - 2)
-            } else version
-
-            var lastVersion = version
-            for (vers in allVersionsList) {
-                if (vers.startsWith(publishVersion)) {
-                    lastVersion = vers
-                    break
-                }
-            }
-
-            list.add(publishVersion)
-            list.add(lastVersion)
-            return list
-        } else {
-            val list = mutableListOf<String>()
-            for (i in 0..1) {
-                var publishVersion = version
-                while (true) {
-                    val tempVersion = calculate(publishVersion)[i]
-                    if (hotfixesList.contains(if (i == 0) publishVersion else tempVersion)) {
-                        publishVersion = tempVersion
-                    } else break
-                }
-                if (publishVersion.endsWith(".0"))
-                    publishVersion = publishVersion.substring(0, publishVersion.length - 2)
-                list.add(publishVersion)
-            }
-            return list
-        }
-    }
-
     private fun createDepFile() {
         updateDependencies.createDepFile()
     }
 
-    private fun getResource(resource: String): String {
-        return this.javaClass.classLoader.getResource(resource)!!.readText()
-    }
+    private fun getResource(resource: String): String =
+        this.javaClass.classLoader.getResource(resource)!!.readText()
 
     private fun writeIfChanged(file: File, content: String) {
         if (!file.exists() || file.readText() != content) {
@@ -520,9 +308,9 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun setCustomProjectIcon() {
-        val iconFile = resourcesDir.resolve("icon.png")
-        if (iconFile.exists()) {
-            iconFile.copyTo(project.file(".idea/icon.png"), true)
+        val icon = resourcesDir.resolve("icon.png")
+        if (icon.exists()) {
+            icon.copyTo(project.file(".idea/icon.png"), true)
         }
     }
 
@@ -535,348 +323,18 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private fun configureModPublication() {
-        project.extensions.configure<ModPublishExtension>("publishMods") {
-            fun tokenProvider(token: String) = project.provider {
-                File("C:\\Tokens\\$token.txt").readText()
-            }
-            displayName.set("${mod.name} ${mod.loader.replaceFirstChar { it.uppercaseChar() }} ${mod.pubStart} v${mod.version}")
-            changelog.set(project.provider { processChangelog() })
-            version.set(project.version.toString())
-            val releaseType = when {
-                mod.version.contains("-beta.") -> BETA
-                mod.version.contains("-alpha.") -> ALPHA
-                else -> STABLE
-            }
-            type.set(releaseType)
-            modLoaders.add(mod.loader)
-            if (isFabric) modLoaders.add("quilt")
-
-            modrinth {
-                projectId.set(mod.modrinth)
-                accessToken.set(tokenProvider("modrinth"))
-                minecraftVersionRange {
-                    start.set(mod.pubStart)
-                    end.set(mod.pubEnd)
-                    includeSnapshots.set(true)
-                }
-            }
-            curseforge {
-                projectId.set(mod.curseforge)
-                accessToken.set(tokenProvider("curseforge"))
-                minecraftVersionRange {
-                    start.set(mod.pubStart)
-                    end.set(mod.pubEnd)
-                }
-            }
-            github {
-                accessToken.set(tokenProvider("github"))
-                repository.set("BizCub/${mod.github}")
-                commitish.set("master")
-                tagName.set("v${project.version}")
-            }
-        }
-
-        if (prop("multiloader.enablePublishToMaven") == "true") {
-            project.plugins.apply("maven-publish")
-            project.extensions.configure(PublishingExtension::class.java) {
-                publications {
-                    create<MavenPublication>("mavenJava") {
-                        groupId = mod.group
-                        artifactId = mod.idDashed
-                        version = project.version.toString()
-                        from(project.components["java"])
-                    }
-                }
-            }
-        }
-    }
-
-    private fun neoforgeFix() {
-        if (isNeoForge) {
-            // This whole thing prevents neoforge from frying your computer by recompiling Minecraft on multiple versions
-            val mutex = project.gradle.sharedServices.registerIfAbsent("createMinecraftArtifactsMutex", NeoForgeMutex::class.java) {
-                maxParallelUsages.set(1)
-            }
-
-            project.tasks.named { it == "createMinecraftArtifacts" }.configureEach {
-                usesService(mutex)
-            }
-        }
-    }
-
-    private fun setProperties() {
-        project.extra["loom.platform"] = mod.loader
-        if (isObfuscated) project.extra["fabric.loom.disableObfuscation"] = false
-
-        if (isForge && scp > "1.21.3") {
-            setProp("cloth-config", "17.0.144")
-        }
-    }
-
-    private fun processChangelog(): String {
-        val text = project.rootDir.resolve("CHANGELOG.md").readText()
-
-        val lines = text.trimEnd().lines()
-        if (lines.isEmpty()) return text
-
-        val lastLine = lines.last().trim()
-
-        val idRegex = Regex("^[A-Za-z0-9_-]{11}$")
-        if (!idRegex.matches(lastLine)) return text
-
-        val videoBlock = """  
-        **▼ Click below to watch the video review on YouTube ▼**  
-  
-        [![preview](https://img.youtube.com/vi/$lastLine/maxresdefault.jpg)](https://www.youtube.com/watch?v=$lastLine)  
-        """.trimIndent()
-
-        val withoutId = lines.dropLast(1).joinToString("\n").trimEnd()
-        return if (withoutId.isEmpty()) videoBlock else "$withoutId\n\n$videoBlock"
-    }
-
-    private fun createRunConfiguration() {
-        val dir = project.rootDir.resolve(".idea/runConfigurations")
-        dir.mkdirs()
-
-        val desired = linkedMapOf<String, String>()
-
-        fun definitionFileConfigurationName(name: String, task: String = "", folderName: String = "") {
-            val fileName = name.split(" ", limit = 2)[1].replace(" ", "")
-            var task1 = task.ifEmpty { fileName.lowerCaseFirst() }
-            if (task1 == "publishToMavenLocal") task1 += " --no-parallel"
-
-            val folderAttr = if (folderName.isEmpty()) "" else " folderName=\"$folderName\""
-
-            desired["Multiloader_$fileName.xml"] = getResource("runConfiguration/main.xml")
-                .replace("%NAME%", name)
-                .replace("%TASK%", task1)
-                .replace("%FOLDER%", folderAttr)
-        }
-
-        val cacheTasks = listOf("removeDependencyKeys", "clearCache", "removeUnusedVersions")
-
-        mainTasks.forEach { (name, task) ->
-            val folder = if (task in cacheTasks) "Cache" else ""
-            definitionFileConfigurationName(name, task, folder)
-        }
-
-        getSourceSets()
-            .filter { sourceSet -> sourceSet.name != "test" }
-            .forEach { sourceSet ->
-                val capitalizedName = sourceSet.name.replaceFirstChar { it.uppercase() }
-                val nameSuffix = if (sourceSet.name == "main") "" else " $capitalizedName"
-                definitionFileConfigurationName("0 Build Active$nameSuffix", "buildActive$capitalizedName", "Build")
-                definitionFileConfigurationName("1 Build All$nameSuffix", "buildAll$capitalizedName", "Build")
-            }
-
-        fun String.camelCaseToWords(): String =
-            split(Regex("(?=[A-Z])")).joinToString(" ").substring(1)
-
-        fun generateMultiplePublishConfigurations(list: List<String>, folderName: String) {
-            val transformedList = list.map { it.camelCaseToWords() }
-            transformedList.forEach { definitionFileConfigurationName("0 Publish $it Active", folderName = folderName) }
-            transformedList.forEach { definitionFileConfigurationName("1 Publish $it", folderName = folderName) }
-            sc.versions.forEach { version ->
-                transformedList.forEach {
-                    definitionFileConfigurationName("2 Publish $it ${version.version}", folderName = folderName)
-                }
-            }
-        }
-
-        definitionFileConfigurationName("0 Publish Platform", "publishSelected", "Publish Platform")
-        definitionFileConfigurationName("1 Publish Active", "publishAllActive", "Publish Platform")
-        definitionFileConfigurationName("2 Publish All", "publishAllVersions", "Publish Platform")
-
-        if (prop("multiloader.enablePublishToMaven") == "true") {
-            generateMultiplePublishConfigurations(publishMaven, "Publish Maven")
-        }
-
-        dir.listFiles { f -> f.extension == "xml" && f.name.startsWith("Multiloader_") }
-            ?.filter { it.name !in desired }
-            ?.forEach(File::delete)
-
-        desired.forEach { (name, content) ->
-            val file = dir.resolve(name)
-            if (!file.exists() || file.readText() != content) file.writeText(content)
-        }
-    }
-
-    private fun updateOrCreateIssueTemplates() {
-        val issueTemplatesDir = project.rootDir.resolve(".github/ISSUE_TEMPLATE")
-        issueTemplatesDir.mkdirs()
-        writeIfChanged(issueTemplatesDir.resolve("bug-report.yml"), getResource("issueTemplate/bug-report.yml"))
-        writeIfChanged(issueTemplatesDir.resolve("new-feature.yml"), getResource("issueTemplate/new-feature.yml"))
-        writeIfChanged(issueTemplatesDir.resolve("config.yml"), getResource("issueTemplate/config.yml"))
-    }
-
-    private fun updateOrCreateChangelogFile() {
-        val changelogFile = project.rootDir.resolve("CHANGELOG.md")
-        changelogFile.createNewFile()
-    }
-
-    private fun updateOrCreateGitIgnoreFile() {
-        val gitIgnoreFile = project.rootDir.resolve(".gitignore")
-        writeIfChanged(gitIgnoreFile, getResource("mainFiles/gitignore.txt"))
-    }
-
-    private fun access() {
-        if (isForge || isNeoForge) {
-            project.pluginManager.apply("dev.kikugie.fletching-table")
-            val ft = project.extensions.getByType<FletchingTableExtension>()
-
-            ft.accessConverter.register("main") {
-                add("${mod.idDashed}.ct")
-            }
-        }
-    }
-
-    private fun generateModMetadata() {
-        val buildPath = if (!isForge) buildResourcesDir else buildResourcesDirForge
-        buildPath.mkdirs()
-        if (!isFabric) buildPath.resolve("META-INF").mkdirs()
-
-        val changeMap = listOf(
-            "id"            to mod.id,
-            "mixin"         to mod.idDashed,
-            "name"          to mod.name,
-            "description"   to if (isFabric) mod.description.replace("\n", "\\n") else mod.description,
-            "version"       to project.version,
-            "modrinth"      to mod.modrinth,
-            "github"        to mod.github,
-            "author"        to "Bizarre Cube",
-            "license"       to "MIT"
-        )
-
-        fun getChangedResource(resource: String): String {
-            var changedResource = getResource(resource)
-            changeMap.forEach { changedResource = changedResource.replace($$"${$${it.first}}", it.second.toString()) }
-            return changedResource
-        }
-
-        fun process(fileName: String, path: String = "") {
-            if (!resourcesDir.resolve(path).resolve(fileName).exists()) {
-                buildPath.resolve(path).resolve(fileName).writeText(getChangedResource("mod/${fileName}"))
-            }
-        }
-
-        process("pack.mcmeta")
-        if (isFabric) process("fabric.mod.json")
-        if (isForge) process("mods.toml", "META-INF")
-        if (isNeoForge) process("neoforge.mods.toml", "META-INF")
-    }
-
-    private fun configureInit() {
+    private fun rootInit() {
+        project.pluginManager.apply("base")
         project.pluginManager.apply("me.modmuss50.mod-publish-plugin")
+        project.pluginManager.apply("java")
+        project.pluginManager.apply("dev.kikugie.fletching-table")
 
-        project.extensions.getByType(BasePluginExtension::class.java).apply {
-            archivesName.set(mod.idDashed)
-        }
+        project.version = "${mod.version}+${mod.mc}"
 
-        project.tasks {
-            fun registerMultipleTasks(list: List<String>) {
-                list.forEach { publish ->
-                    val real = realPublishTarget(publish)
-                    register<Copy>("publish$real${mod.mc}") {
-                        group = "publishing"
-                        dependsOn("publish$real")
-                    }
-                }
-            }
-            registerMultipleTasks(publishPlatforms)
-            if (prop("multiloader.enablePublishToMaven") == "true") {
-                registerMultipleTasks(publishMaven)
-            }
-            register<Copy>("buildAllMain") {
-                group = "build"
-                into(project.rootDir.resolve("build/libs/${mod.version}"))
-                dependsOn("build")
-            }
-            if (scc.isActive) {
-                register("updateDependencies") {
-                    group = "multiloader"
-                    doLast {
-                        updateDependencies.updateAllCachedDeps()
-                    }
-                }
-                register("removeDependencyKeys") {
-                    group = "multiloader"
-                    doLast {
-                        removeDependencyKeys()
-                    }
-                }
-                register("clearCache") {
-                    group = "multiloader"
-                    doLast {
-                        clearCache()
-                    }
-                }
-                register("removeUnusedVersions") {
-                    group = "multiloader"
-                    doLast {
-                        removeUnusedVersions()
-                    }
-                }
-                register("publishSelected") {
-                    group = "publishing"
-                    val activeProject = scc.project
-                    dependsOn(project.provider {
-                        resolveSelectedPublishPaths(activeProject)
-                    })
-                }
-                register("publishInteractive") {
-                    group = "publishing"
-                    dependsOn(named("publishSelected"))
-                }
-                register("publishAllActive") {
-                    group = "publishing"
-                    dependsOn(named("publishModsActive"))
-                }
-                register("publishAllVersions") {
-                    group = "publishing"
-                    sc.versions.forEach { node ->
-                        dependsOn(":${node.project}:publishMods")
-                    }
-                }
-            }
-            named<Jar>("jar") {
-                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-                if (mixinFile.exists()) {
-                    manifest { attributes["MixinConfigs"] = mixinFile.name }
-                }
-                doFirst { afterProcessResources() }
-            }
-            named<ProcessResources>("processResources") {
-                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-                doLast {
-                    afterProcessResources()
-                }
-            }
-        }
-
-        project.configure<JavaPluginExtension> {
-            val javaSCNumber = when {
-                scp >= "26.1"   -> 25
-                scp >= "1.20.5" -> 21
-                scp >= "1.18"   -> 17
-                scp >= "1.17"   -> 16
-                else            -> 8
-            }
-            val javaVersion = JavaVersion.toVersion(javaSCNumber)
-            sourceCompatibility = javaVersion
-            targetCompatibility = javaVersion
-            toolchain.languageVersion.set(JavaLanguageVersion.of(javaSCNumber))
-        }
-
-        addDependency(repository = "api.modrinth.com/maven")
-        if (isNeoForge) addDependency(repository = "maven.neoforged.net/releases")
-
-        sc.swaps["cloth_config_id"] = when {
-            (isFabric && scp >= "1.18") || (isForge && scp < "1.17") -> "cloth-config"
-            (isForge && scp >= "1.17") || isNeoForge ->                 "cloth_config"
-            isFabric && scp < "1.18" ->                                 "cloth-config2"
-            else ->                                                     "not exist"
-        }.let { "\"$it\"" }
+        access()
+        registerMergedJarTask()
+        registerRootTasks()
+        configureModPublication()
 
         project.gradle.taskGraph.whenReady {
             if (project.rootProject.extra.has("multiloader.publishCheckDone")) return@whenReady
@@ -893,104 +351,12 @@ open class MultiLoader(private val project: Project) {
             checkPublishConflict()
         }
 
-        project.afterEvaluate {
-            afterEvaluate()
-        }
-
         project.gradle.projectsEvaluated {
-            if (project.name == sc.versions.last().project) {
-                afterFinishBuild()
-            }
+            generateModMetadata()
+            mixinConfigRegistration()
+            generateFabricModJson()
+            createRunConfiguration()
         }
-    }
-
-    private fun resolveSelectedPublishPaths(activeProject: String): List<String> {
-        val nodes    = sc.versions
-        val versions = nodes.map { it.version }.distinct()
-        val loaders  = nodes.map { it.project.substringAfterLast("-") }.distinct()
-        val sites    = publishPlatforms
-
-        fun ask(prompt: String, options: List<String>): List<String> {
-            project.logger.lifecycle(
-                "[Multiloader] $prompt (Possible values: ${options.joinToString(", ")}; comma-separated)"
-            )
-            val input = (System.console()?.readLine() ?: readlnOrNull()).orEmpty()
-            project.logger.lifecycle("")
-            return input.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        }
-
-        val versionInputs = if (versions.size == 1) {
-            versions
-        } else ask(
-            "Enter Minecraft version(s) ('active', 'all', exact, or a range like '>=26')",
-            versions + "active" + "all"
-        )
-        if (versionInputs.isEmpty()) {
-            throw org.gradle.api.GradleException("[Multiloader] No version entered")
-        }
-
-        val nonActivePresent = versionInputs.any { !it.equals("active", ignoreCase = true) }
-        val loaderRaw = if (nonActivePresent) ask("Enter loader(s) ('all' or comma-separated)", loaders + "all") else emptyList()
-        val loaderInputs = if (loaderRaw.any { it.equals("all", ignoreCase = true) }) loaders else loaderRaw
-
-        val siteInputs = if (sites.size == 1) {
-            sites
-        } else ask("Enter publishing site(s)", sites.map { it.lowercase() })
-        if (siteInputs.isEmpty()) {
-            throw org.gradle.api.GradleException("[Multiloader] No site entered")
-        }
-        val siteTasks = siteInputs.map { site ->
-            val matched = sites.firstOrNull { it.equals(site, ignoreCase = true) }
-                ?: throw org.gradle.api.GradleException("[Multiloader] Unknown site: $site")
-            realPublishTarget(matched)
-        }
-
-        fun resolveNodes(token: String, loader: String): List<StonecutterProject> = when {
-            token.equals("all", ignoreCase = true) ->
-                nodes.filter { it.project.substringAfterLast("-") == loader }
-
-            token in versions ->
-                nodes.filter { it.version == token && it.project.substringAfterLast("-") == loader }
-
-            else -> nodes.filter { node ->
-                runCatching { node.parsed.matches(token) }.getOrDefault(false) &&
-                        node.project.substringAfterLast("-") == loader
-            }
-        }
-
-        val taskPaths = LinkedHashSet<String>()
-        versionInputs.forEach { token ->
-            val isActive = token.equals("active", ignoreCase = true)
-            siteTasks.forEach { siteTask ->
-                if (isActive) {
-                    taskPaths += ":$activeProject:publish${siteTask}Active"
-                } else {
-                    if (loaderInputs.isEmpty()) {
-                        throw org.gradle.api.GradleException("[Multiloader] No loader entered for '$token'")
-                    }
-                    loaderInputs.forEach { loader ->
-                        val resolved = resolveNodes(token, loader)
-                        if (resolved.isEmpty()) {
-                            project.logger.lifecycle(
-                                "[Multiloader] Skipping '$token' for loader '$loader' (no matching version)"
-                            )
-                            return@forEach
-                        }
-                        resolved.forEach { node -> taskPaths += ":${node.project}:publish$siteTask" }
-                    }
-                }
-            }
-        }
-        if (taskPaths.isEmpty()) {
-            throw org.gradle.api.GradleException(
-                "[Multiloader] Nothing to publish: no version/loader combination matched"
-            )
-        }
-
-        project.logger.lifecycle("[Multiloader] Selected ${taskPaths.size} publish task(s):")
-        taskPaths.forEachIndexed { i, p -> project.logger.lifecycle("[Multiloader]   ${i + 1}. $p") }
-
-        return taskPaths.toList()
     }
 
     private fun checkPublishConflict() {
@@ -1005,7 +371,6 @@ open class MultiLoader(private val project: Project) {
 
         val latest = updateDependencies.getModrinthLatestVersion(id, token) ?: return
         val (latestVersion, latestChangelog) = latest
-
         if (latestVersion.isBlank()) return
 
         val newVersion = project.version.toString()
@@ -1013,7 +378,6 @@ open class MultiLoader(private val project: Project) {
 
         val versionConflict = latestVersion.trim() == newVersion
         val changelogConflict = latestChangelog.trim().isNotEmpty() && latestChangelog.trim() == newChangelog
-
         if (!versionConflict && !changelogConflict) return
 
         val problems = mutableListOf<String>()
@@ -1046,103 +410,8 @@ open class MultiLoader(private val project: Project) {
         project.logger.lifecycle("[Multiloader] Forcing publication despite duplicate.")
     }
 
-    private fun setStonecutterParameters() {
-        project.pluginManager.withPlugin("dev.kikugie.stonecutter") {
-            val ext = project.extensions.findByType(StonecutterControllerExtension::class.java) ?: return@withPlugin
-            ext.parameters {
-                val loader = current.project.substringAfterLast('-')
-                val version = current.project.removeSuffix("-$loader")
-                properties.tags(version, loader)
-                constants.match(node.metadata.project.substringAfterLast('-'), "fabric", "neoforge", "forge")
-                swaps["mod_id"] = "\"${modProp("id")}\";"
-
-                val map = linkedMapOf<String, Int>()
-                map["accessWidener"] = 2
-                map["classTweaker"] = 2
-                replacements.string(current.parsed >= "26.1") {
-                    for ((key, value) in map) {
-                        for (i in 1..value) {
-                            val str = "$key v$i"
-                            replace("$str named", "$str official")
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun configureTasks() {
-        fun configureTask(dependentTask: String, dependencyTask: String) {
-            project.tasks.findByName(dependentTask)?.dependsOn(dependencyTask)
-        }
-
-        configureTask("validateAccessWidener", "processResources")
-        configureTask("createMinecraftArtifacts", "processResources")
-
-        project.tasks {
-            getSourceSets()
-                .filter { sourceSet -> sourceSet.name != "test" && sourceSet.name != "main" }
-                .forEach { sourceSet ->
-                    val sourceSetName = sourceSet.name
-                    val capitalizedName = sourceSetName.replaceFirstChar { character -> character.uppercase() }
-
-                    val jarTask = register<Jar>("${sourceSetName}Jar") {
-                        group = "build"
-                        from(sourceSet.output)
-                        archiveClassifier.set(sourceSetName)
-                    }
-
-                    register<Copy>("buildAll$capitalizedName") {
-                        group = "build"
-                        into(project.rootDir.resolve("build/libs/${mod.version}"))
-                        from(jarTask)
-                    }
-                }
-
-            if (scc.isActive) {
-                getSourceSets()
-                    .filter { sourceSet -> sourceSet.name != "test" }
-                    .forEach { sourceSet ->
-                        val capitalizedName = sourceSet.name.replaceFirstChar { character -> character.uppercase() }
-                        register("buildActive$capitalizedName") {
-                            dependsOn(named("buildAll$capitalizedName"))
-                        }
-                    }
-
-                register("runActiveClient") { dependsOn(named("runClient")) }
-                register("runActiveServer") { dependsOn(named("runServer")) }
-
-                fun registerMultipleTasks(platforms: List<String>) {
-                    platforms.forEach { publishTarget ->
-                        val real = realPublishTarget(publishTarget)
-                        register("publish${real}Active") {
-                            dependsOn(named("publish$real"))
-                        }
-                    }
-                }
-
-                registerMultipleTasks(publishPlatforms)
-                if (prop("multiloader.enablePublishToMaven") == "true") {
-                    registerMultipleTasks(publishMaven)
-                }
-            }
-        }
-
-        project.tasks.withType<JavaExec>().configureEach {
-            if (name == "runClient") {
-                if (mixinFile.exists() && isForge) args("--mixin.config=${mixinFile.name}")
-                args("--username=$playerName", "--uuid=$playerUUID")
-            }
-            if (name == "runServer") {
-                standardInput = System.`in`
-                args("--nogui")
-            }
-        }
-    }
-
     private fun removeDependencyKeys() {
         val availableEntries = updateDependencies.listKeys()
-
         if (availableEntries.isEmpty()) {
             project.logger.lifecycle("[Multiloader] dependencies.json is empty, nothing to remove.")
             return
@@ -1155,10 +424,7 @@ open class MultiLoader(private val project: Project) {
         project.logger.lifecycle("[Multiloader] Enter numbers or keys to remove (comma/space separated):")
 
         val raw = (System.console()?.readLine() ?: readlnOrNull()).orEmpty()
-
-        val tokens = raw.split(",", " ", "\n")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
+        val tokens = raw.split(",", " ", "\n").map { it.trim() }.filter { it.isNotEmpty() }
 
         val keys = tokens.map { token ->
             val selectedNumber = token.toIntOrNull()
@@ -1176,77 +442,285 @@ open class MultiLoader(private val project: Project) {
         updateDependencies.clearCache()
     }
 
-    private fun removeUnusedVersions() {
-        val usedVersions = sc.versions.map { it.project.substringBeforeLast("-") }.distinct()
-        updateDependencies.removeUnusedVersions(usedVersions)
+    private fun access() {
+        val ft = project.extensions.getByType<FletchingTableExtension>()
+        ft.accessConverter.register("main") {
+            add("${mod.idDashed}.ct")
+        }
+    }
+
+    private fun registerRootTasks() {
+        project.tasks {
+            register("updateDependencies") {
+                group = "multiloader"
+                doLast { updateDependencies.updateAllCachedDeps() }
+            }
+            register("removeDependencyKeys") {
+                group = "multiloader"
+                doLast { removeDependencyKeys() }
+            }
+            register("clearCache") {
+                group = "multiloader"
+                doLast { clearCache() }
+            }
+        }
+    }
+
+    private fun registerMergedJarTask() {
+        project.tasks.register<Jar>("buildMerged") {
+            group = "build"
+            archiveFileName.set("${mod.idDashed}-${mod.version}+${mod.mc}.jar")
+            destinationDirectory.set(rootDir.resolve("build/libs/${mod.version}"))
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+            if (mixinFile.exists()) manifest { attributes["MixinConfigs"] = mixinFile.name }
+
+            loaderProjects.forEach { dependsOn(":$it:classes") }
+
+            val seen = mutableSetOf<String>()
+            loaderProjects.forEach { name ->
+                val sub = project.rootProject.project(":$name")
+                val ss = sub.extensions.getByType<SourceSetContainer>()["main"]
+                from(ss.output.classesDirs) {
+                    eachFile {
+                        if (!seen.add(path)) {
+                            logger.warn("[Multiloader] class collision across loaders: $path (from :$name)")
+                        }
+                    }
+                }
+            }
+
+            from(buildResourcesDir)
+        }
+    }
+
+    private fun configureModPublication() {
+        mod.pubStart = mod.mc
+        mod.pubEnd = if (prop("multiloader.lockPublishVersion") == "true") mod.mc else "latest"
+
+        project.extensions.configure<ModPublishExtension>("publishMods") {
+            fun tokenProvider(token: String) = project.provider {
+                File("C:\\Tokens\\$token.txt").readText()
+            }
+            file.set(project.tasks.named<Jar>("buildMerged").flatMap { it.archiveFile })
+            displayName.set("${mod.name} ${mod.version}v ${mod.mc}")
+            changelog.set(project.provider { processChangelog() })
+            version.set(project.version.toString())
+            val releaseType = when {
+                mod.version.contains("-beta.") -> BETA
+                mod.version.contains("-alpha.") -> ALPHA
+                else -> STABLE
+            }
+            type.set(releaseType)
+            listOf("fabric", "forge", "neoforge", "quilt").forEach { modLoaders.add(it) }
+
+            modrinth {
+                projectId.set(mod.modrinth)
+                accessToken.set(tokenProvider("modrinth"))
+                minecraftVersionRange {
+                    start.set(mod.pubStart)
+                    end.set(mod.pubEnd)
+                    includeSnapshots.set(true)
+                }
+            }
+            curseforge {
+                projectId.set(mod.curseforge)
+                accessToken.set(tokenProvider("curseforge"))
+                minecraftVersionRange {
+                    start.set(mod.pubStart)
+                    end.set(mod.pubEnd)
+                }
+            }
+            github {
+                accessToken.set(tokenProvider("github"))
+                repository.set("BizCub/${mod.github}")
+                commitish.set("master")
+                tagName.set("v${project.version}")
+            }
+        }
+    }
+
+    private fun neoforgeFix() {
+        if (isNeoForge || isForge || isCommon) {
+            val mutex = project.gradle.sharedServices.registerIfAbsent(
+                "createMinecraftArtifactsMutex",
+                NeoForgeMutex::class.java
+            ) {
+                maxParallelUsages.set(1)
+            }
+            project.tasks.named { it == "createMinecraftArtifacts" }.configureEach {
+                usesService(mutex)
+            }
+        }
+    }
+
+    private fun processChangelog(): String {
+        val text = rootDir.resolve("CHANGELOG.md").readText()
+
+        val lines = text.trimEnd().lines()
+        if (lines.isEmpty()) return text
+
+        val lastLine = lines.last().trim()
+
+        val idRegex = Regex("^[A-Za-z0-9_-]{11}$")
+        if (!idRegex.matches(lastLine)) return text
+
+        val videoBlock = """  
+        **▼ Click below to watch the video review on YouTube ▼**  
+  
+        [![preview](https://img.youtube.com/vi/$lastLine/maxresdefault.jpg)](https://www.youtube.com/watch?v=$lastLine)  
+        """.trimIndent()
+
+        val withoutId = lines.dropLast(1).joinToString("\n").trimEnd()
+        return if (withoutId.isEmpty()) videoBlock else "$withoutId\n\n$videoBlock"
+    }
+
+    private fun createRunConfiguration() {
+        val dir = rootDir.resolve(".idea/runConfigurations")
+        dir.mkdirs()
+
+        val desired = linkedMapOf<String, String>()
+
+        fun add(name: String, task: String, folder: String = "") {
+            val fileName = name.replace(" ", "")
+            val folderAttr = if (folder.isEmpty()) "" else " folderName=\"$folder\""
+            desired["Multiloader_$fileName.xml"] = getResource("runConfiguration/main.xml")
+                .replace("%NAME%", name)
+                .replace("%TASK%", task)
+                .replace("%FOLDER%", folderAttr)
+        }
+
+        add("Run Fabric Client", ":fabric:runClient", "Run")
+        add("Run Fabric Server", ":fabric:runServer", "Run")
+        add("Run Forge Client", ":forge:runClient", "Run")
+        add("Run Forge Server", ":forge:runServer", "Run")
+        add("Run NeoForge Client", ":neoforge:runClient", "Run")
+        add("Run NeoForge Server", ":neoforge:runServer", "Run")
+
+        add("Build", "buildMerged", "Build")
+
+        add("Update Dependencies", "updateDependencies", "Cache")
+        add("Clear Cache", "clearCache", "Cache")
+        add("Remove Keys", "removeDependencyKeys", "Cache")
+
+        add("Publish Mods", "publishMods", "Publish")
+        add("Publish Modrinth", "publishModrinth", "Publish")
+        add("Publish Curseforge", "publishCurseforge", "Publish")
+        add("Publish Github", "publishGithub", "Publish")
+
+        dir.listFiles { f -> f.extension == "xml" && f.name.startsWith("Multiloader_") }
+            ?.filter { it.name !in desired }
+            ?.forEach(File::delete)
+
+        desired.forEach { (name, content) ->
+            val file = dir.resolve(name)
+            if (!file.exists() || file.readText() != content) file.writeText(content)
+        }
+    }
+
+    private fun updateOrCreateIssueTemplates() {
+        val issueTemplatesDir = rootDir.resolve(".github/ISSUE_TEMPLATE")
+        issueTemplatesDir.mkdirs()
+        writeIfChanged(issueTemplatesDir.resolve("bug-report.yml"), getResource("issueTemplate/bug-report.yml"))
+        writeIfChanged(issueTemplatesDir.resolve("new-feature.yml"), getResource("issueTemplate/new-feature.yml"))
+        writeIfChanged(issueTemplatesDir.resolve("config.yml"), getResource("issueTemplate/config.yml"))
+    }
+
+    private fun updateOrCreateChangelogFile() {
+        rootDir.resolve("CHANGELOG.md").createNewFile()
+    }
+
+    private fun updateOrCreateGitIgnoreFile() {
+        writeIfChanged(rootDir.resolve(".gitignore"), getResource("mainFiles/gitignore.txt"))
+    }
+
+    private fun generateModMetadata() {
+        buildResourcesDir.mkdirs()
+        buildResourcesDir.resolve("META-INF").mkdirs()
+
+        val changeMap = listOf(
+            "id" to mod.id,
+            "mixin" to mod.idDashed,
+            "name" to mod.name,
+            "description" to mod.description,
+            "version" to project.version,
+            "modrinth" to mod.modrinth,
+            "github" to mod.github,
+            "author" to "Bizarre Cube",
+            "license" to "MIT"
+        )
+
+        fun getChangedResource(resource: String, escapeNewLines: Boolean): String {
+            var changed = getResource(resource)
+            changeMap.forEach { (k, v) ->
+                val value =
+                    if (escapeNewLines && k == "description") v.toString().replace("\n", "\\n") else v.toString()
+                changed = changed.replace($$"${$${k}}", value)
+            }
+            return changed
+        }
+
+        fun process(fileName: String, path: String = "", escapeNewLines: Boolean = false) {
+            if (!resourcesDir.resolve(path).resolve(fileName).exists()) {
+                buildResourcesDir.resolve(path).resolve(fileName)
+                    .writeText(getChangedResource("mod/$fileName", escapeNewLines))
+            }
+        }
+
+        process("pack.mcmeta")
+        process("fabric.mod.json", escapeNewLines = true)
+        process("mods.toml", "META-INF")
+        process("neoforge.mods.toml", "META-INF")
     }
 
     private fun mixinConfigRegistration() {
-        val tomlFile = if (!isForge) {
+        listOf(
+            buildResourcesDir.resolve("META-INF/mods.toml"),
             buildResourcesDir.resolve("META-INF/neoforge.mods.toml")
-        } else {
-            buildResourcesDirForge.resolve("META-INF/mods.toml")
+        ).forEach { tomlFile ->
+            if (!tomlFile.exists()) return@forEach
+
+            val mapper = TomlMapper()
+
+            @Suppress("UNCHECKED_CAST")
+            val data = mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
+
+            @Suppress("UNCHECKED_CAST")
+            val mods =
+                data.getOrPut("mods") { mutableListOf<MutableMap<String, Any>>() } as MutableList<MutableMap<String, Any>>
+            if (iconFile.exists()) mods[0]["logoFile"] = "icon.png"
+            if (iconFile.exists()) mods[0]["iconFile"] = "icon.png"
+
+            if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
+
+            mapper.writeValue(tomlFile, data)
         }
-
-        if (!isForge && !isNeoForge || !tomlFile.exists()) return
-
-        val mapper = TomlMapper()
-        val data = mapper.readValue(tomlFile, MutableMap::class.java) as MutableMap<String, Any>
-
-        val mods = data.getOrPut("mods") { mutableListOf<MutableMap<String, Any>>() } as MutableList<MutableMap<String, Any>>
-        if (iconFile.exists()) mods[0]["logoFile"] = "icon.png"
-        if (iconFile.exists() && isNeoForge) mods[0]["iconFile"] = "icon.png"
-
-        if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
-
-        mapper.writeValue(tomlFile, data)
-    }
-
-    private fun refmapRegister() {
-        val buildMixinFile = buildResourcesDirForge.resolve(mixinFile.name)
-
-        if (!(isForge && isForgeLegacy && buildMixinFile.exists())) return
-
-        val jsonString = buildMixinFile.readText()
-        val json = JSONObject(jsonString)
-
-        json.put("refmap", "main.refmap.json")
-
-        buildMixinFile.writeText(json.toString(4))
     }
 
     private fun generateFabricModJson() {
         val jsonFile = buildResourcesDir.resolve("fabric.mod.json")
-
-        if (!isFabric || !jsonFile.exists()) return
+        if (!jsonFile.exists()) return
 
         val classes = analyzeJavaSources().toMutableList()
         classes.removeIf { it.entrypointName == "" }
 
-        val jsonString = jsonFile.readText()
-        val json = JSONObject(jsonString)
+        val json = JSONObject(jsonFile.readText())
 
         val entrypointsKey = JSONObject()
         json.put("entrypoints", entrypointsKey)
-
         classes.forEach { entrypointsKey.put(it.entrypointName, JSONArray().put(it.classFilePath)) }
 
         val mixinsKey = JSONArray()
         json.put("mixins", mixinsKey)
-
         if (mixinFile.exists()) mixinsKey.put(mixinFile.name)
 
         if (isMainCTFileExist()) json.put("accessWidener", "${mod.idDashed}.ct")
-
         if (iconFile.exists()) json.put("icon", "icon.png")
 
         if (badges.isNotEmpty()) {
             json.put(
                 "custom",
-                JSONObject().put(
-                    "modmenu",
-                    JSONObject().put("badges", JSONArray(badges))
-                )
+                JSONObject().put("modmenu", JSONObject().put("badges", JSONArray(badges)))
             )
         }
 
@@ -1260,7 +734,10 @@ open class MultiLoader(private val project: Project) {
 
         val result = mutableListOf<ClassInfo>()
 
-        buildDir.resolve("generated/stonecutter/main").walkTopDown()
+        val fabricSources = project.rootProject.file("fabric/src/main/java")
+        if (!fabricSources.exists()) return result
+
+        fabricSources.walkTopDown()
             .filter { it.isFile && it.extension == "java" }
             .forEach { file ->
                 try {
@@ -1307,195 +784,144 @@ open class MultiLoader(private val project: Project) {
         return result
     }
 
-    private fun configureCommon() {
-        mod.pubStart = propIf("pub-start", mod.mc)
-        mod.pubEnd = propIf("pub-end", mod.mc)
-
-        if (prop("multiloader.editPublishVersions") == "true") {
-            val publishVersionList = getPublishVersion(mod.mc)
-            mod.pubStart = propIf("pub-start", publishVersionList.first())
-            mod.pubEnd = propIf("pub-end", publishVersionList.last())
+    private fun configureInit() {
+        when {
+            isCommon   -> project.pluginManager.apply("fabric-loom")
+            isFabric   -> project.pluginManager.apply("fabric-loom")
+            isNeoForge -> project.pluginManager.apply("net.neoforged.moddev")
+            else       -> project.pluginManager.apply("net.minecraftforge.gradle")
         }
 
-        project.version = "${mod.version}-${mod.loader}+${mod.pubStart}"
+        project.pluginManager.apply("java")
 
+        replayLoaderBlock()
+        applyDependencies()
+
+        project.extensions.getByType(BasePluginExtension::class.java).apply {
+            archivesName.set(mod.idDashed)
+        }
+
+        project.configure<JavaPluginExtension> {
+            val javaVersion = JavaVersion.toVersion(25)
+            sourceCompatibility = javaVersion
+            targetCompatibility = javaVersion
+            toolchain.languageVersion.set(JavaLanguageVersion.of(25))
+        }
+
+        project.afterEvaluate {
+            when {
+                isCommon   -> configureCommon()
+                isFabric   -> configureFabric()
+                isNeoForge -> configureNeoForge()
+                else       -> configureForge()
+            }
+            configureTasks()
+        }
+    }
+
+    private fun applyDependencies() {
         project.repositories {
             for (rep in reps) maven(rep.repository)
             mavenLocal()
         }
 
         project.dependencies {
-            for (dep in deps) add(if (isFabric && isObfuscated) dep.modConfiguration else dep.configuration, dep.dependency) {
+            if (!isCommon) add("implementation", project.project(":common"))
+            if (isCommon || isFabric) "minecraft"("com.mojang:minecraft:${mod.mc}")
+            if (isForge) {
+                val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
+                "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
+                if (mod.mc >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
+            }
+
+            for (dep in deps) add(dep.configuration, dep.dependency) {
                 for (module in eModules) exclude(module.module)
+            }
+        }
+
+        if (isForge) {
+            project.repositories {
+                val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
+                val fg = project.extensions.getByType<ForgeGradleExtension>()
+                minecraft.mavenizer(this)
+                maven(fg.forgeMaven)
+                maven(fg.minecraftLibsMaven)
             }
         }
     }
 
-    private fun configureFabric() {
-        if (!isFabric) return
-
-        project.pluginManager.apply("fabric-loom")
-        val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
-
-        setBuiltFile(project.tasks.named<AbstractArchiveTask>(fabricJarTask).get().archiveFile)
-
-        project.dependencies {
-            "minecraft"("com.mojang:minecraft:${mod.mcExact}")
-            if (isObfuscated) "mappings"(loom.officialMojangMappings())
+    private fun configureTasks() {
+        fun configureTask(dependentTask: String, dependencyTask: String) {
+            project.tasks.findByName(dependentTask)?.dependsOn(dependencyTask)
         }
+        configureTask("validateAccessWidener", ":processResources")
+        configureTask("createMinecraftArtifacts", ":processResources")
 
+        project.tasks.withType<JavaExec>().configureEach {
+            if (name == "runClient") {
+                args("--username=$playerName", "--uuid=$playerUUID")
+            }
+            if (name == "runServer") {
+                standardInput = System.`in`
+                args("--nogui")
+            }
+        }
+    }
+
+    private fun configureCommon() {
+        val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
         loom.apply {
-            if (isMainCTFileExist())
-                accessWidenerPath.set(ctFabricFile)
+            if (isMainCTFileExist()) accessWidenerPath.set(awBuildFile)
+        }
+    }
 
-            if (getExtraSourceSet() != null && isObfuscated)
-                createRemapConfigurations(getExtraSourceSet()!!)
-
+    private fun configureFabric() {
+        val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
+        loom.apply {
+            if (isMainCTFileExist()) accessWidenerPath.set(awBuildFile)
             runConfigs {
-                if (getExtraSourceSet() != null) {
-                    configureEach {
-                        sourceSet = getExtraSourceSet()!!.name
-                    }
-                }
-                getByName("client") {
-                    runDirectory.set(clientRunFile)
-                }
-                getByName("server") {
-                    runDirectory.set(serverRunFile)
-                }
+                getExtraSourceSet()?.let { ess -> configureEach { sourceSet = ess.name } }
+                getByName("client") { runDirectory.set(clientRunFile) }
+                getByName("server") { runDirectory.set(serverRunFile) }
             }
         }
     }
 
     private fun configureForge() {
-        if (!isForge) return
-
-        project.pluginManager.apply("net.minecraftforge.gradle")
-
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
-
-        val enableMixinExtras = prop("multiloader.enableMixinExtrasForLegacyForge") == "true"
-        val isMixinExtrasIncluded = scp >= "1.21.10"
-
-        if (enableMixinExtras) {
-            project.pluginManager.apply("net.minecraftforge.jarjar")
-
-            project.extensions.configure<JarJarExtension> {
-                register("jarJar")
-            }
-        }
-
-        fun getMixinExtraDep(loader: String): String {
-            return "io.github.llamalad7:mixinextras-$loader:0.5.3"
-        }
-
-        project.repositories {
-            val fg = project.extensions.getByType<ForgeGradleExtension>()
-            minecraft.mavenizer(this)
-            maven(fg.forgeMaven)
-            maven(fg.minecraftLibsMaven)
-        }
-
-        project.dependencies {
-            "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
-            if (scp >= "1.21.6") "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
-            if (isForgeLegacy && mixinFile.exists()) "annotationProcessor"("org.spongepowered:mixin:0.8.7:processor")
-            if (enableMixinExtras && !isMixinExtrasIncluded) {
-                "compileOnly"("annotationProcessor"(getMixinExtraDep("common"))!!)
-                "runtimeOnly"(getMixinExtraDep("forge"))
-                "jarJar"(getMixinExtraDep("forge"))
-            }
-        }
-
-        if (getExtraSourceSet() != null) {
-            getSourceSets()["main"].apply {
-                runtimeClasspath += getSourceSets()[getExtraSourceSet()!!.name].output
-            }
-        }
-
-        val jarTask = if (!enableMixinExtras || isMixinExtrasIncluded) "jar" else "jarJar"
-
-        if (isForgeLegacy) {
-            project.pluginManager.apply("net.minecraftforge.renamer")
-
-            val taskProviderJar = project.tasks.named<org.gradle.api.tasks.bundling.Jar>(jarTask)
-
-            project.extensions.configure<RenamerExtension> {
-                mappings(minecraft.dependency.toSrg)
-
-                if (mixinFile.exists()) {
-                    enableMixinRefmaps {
-                        config(mixinFile.name)
-                        jar(taskProviderJar)
-                    }
-                }
-
-                val renameJar = classes(taskProviderJar) {
-                    archiveClassifier.set("srg")
-                    if (mixinFile.exists())
-                        mappings(mixin.generatedMappings)
-                }
-
-                setBuiltFile(renameJar.flatMap { it.output })
-            }
-        } else {
-            setBuiltFile(project.tasks.named<Jar>(jarTask).get().archiveFile)
-        }
 
         minecraft.apply {
             mappings("official", mod.mc)
-            accessTransformers.from(atForgeFile)
+            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
 
             runs {
                 configureEach {
                     mods {
                         register("main") { source(getSourceSets()["main"]) }
-                        if (getExtraSourceSet() != null)
-                            register("testmod") { source(getExtraSourceSet()!!) }
+                        getExtraSourceSet()?.let { ess -> register(ess.name) { source(ess) } }
                     }
                 }
-                register("client") {
-                    workingDir.set(clientRunFile)
-                }
-                register("server") {
-                    workingDir.set(serverRunFile)
-                }
+                register("client") { workingDir.set(clientRunFile) }
+                register("server") { workingDir.set(serverRunFile) }
             }
         }
     }
 
     private fun configureNeoForge() {
-        if (!isNeoForge) return
+        project.dependencies.add("implementation", project.project(":common"))
 
         project.pluginManager.apply("net.neoforged.moddev")
-
-        setBuiltFile(project.tasks.named<Jar>("jar").get().archiveFile)
-
         project.extensions.configure<NeoForgeExtension> {
             version = getDep("neoforge")
-
-            if (isMainCTFileExist())
-                accessTransformers.from(atNeoForgeFile)
-
+            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
             mods {
                 register("main") { sourceSet(getSourceSets().named("main").get()) }
-                if (getExtraSourceSet() != null) {
-                    register(getExtraSourceSet()!!.name) { sourceSet(getExtraSourceSet()) }
-                }
+                getExtraSourceSet()?.let { ess -> register(ess.name) { sourceSet(ess) } }
             }
-
             runs {
-                configureEach {
-                    disableIdeRun()
-                }
-                register("client") {
-                    gameDirectory.set(clientRunFile)
-                    client()
-                }
-                register("server") {
-                    gameDirectory.set(serverRunFile)
-                    server()
-                }
+                configureEach { disableIdeRun() }
+                register("client") { gameDirectory.set(clientRunFile); client() }
+                register("server") { gameDirectory.set(serverRunFile); server() }
             }
         }
     }

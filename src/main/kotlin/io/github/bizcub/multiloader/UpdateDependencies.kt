@@ -13,7 +13,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     val mod = ml.mod
-    val filePath = project.rootDir.resolve("build/multiloader")
+    val filePath = project.rootProject.projectDir.resolve("build/multiloader")
     val file = filePath.resolve("dependencies.json")
     val isUpdateEnabled = ml.prop("multiloader.enableDependenciesUpdate") == "true"
 
@@ -46,7 +46,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             return downloadDependency(key, useId, "")
         }
         val innerKey = if (key == "fabric" || key == "forge" || key == "neoforge") "loader" else key
-        val configValue = getConfigValue(mod.mcExact, mod.loader, innerKey)
+        val configValue = getConfigValue(mod.loader, innerKey)
         return configValue ?: downloadDependency(key, useId, ", because it was not found in the config")
     }
 
@@ -75,11 +75,11 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
 
         fun checkAppropriateVersions(gameVersion: String): Boolean {
             if (ml.prop("multiloader.enableAdvancedVersionSearch") == "true") {
-                if (mod.mcExact.contains("$gameVersion.")) {
+                if (mod.mc.contains("$gameVersion.")) {
                     return true
                 }
             }
-            return gameVersion == mod.mcExact || gameVersion == mod.mc
+            return gameVersion == mod.mc
         }
 
         json.forEachIndexed { i, _ ->
@@ -147,16 +147,16 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun forge(): String {
-        val mc = mod.mcExact
+        val mc = mod.mc
         val jsonObject = JSONObject(fetch("https://files.minecraftforge.net/net/minecraftforge/forge/maven-metadata.json"))
         val array = jsonObject.getJSONArray(mc)
 
-        return "${mod.mcExact}-${array.get(array.length()-1).toString().split(mc)[1].substring(1)}"
+        return "$mc-${array.get(array.length() - 1).toString().split(mc)[1].substring(1)}"
     }
 
     fun neoForge(): String {
-        var mc = if (ml.isObfuscated) mod.mc.substring(2) else mod.mc
-        if (!mc.substring(if (ml.isObfuscated) 2 else 3).contains(".")) mc += ".0"
+        var mc = mod.mc
+        if (!mc.substring(3).contains(".")) mc += ".0"
 
         val neoForgeVersionsList = getXMLVersionList("https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml")
         neoForgeVersionsList.reversed().forEach { vers ->
@@ -183,23 +183,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         return versions
     }
 
-    fun getMinecraftVersionList(url: String): List<String> {
-        val jsonString = fetch(url)
-        val jsonObject = JSONObject(jsonString)
-        val array = jsonObject.getJSONArray("versions")
-
-        val versionsList = mutableListOf<String>()
-        for (i in 0 until array.length()) {
-            val element = array.getJSONObject(i)
-            if (element.getString("type") == "release") {
-                versionsList.add(element.getString("id"))
-            }
-        }
-        return versionsList
-    }
-
     fun addToConfig(innerKey: String, value: String) {
-        val versionKey = mod.mcExact
         val outerKey = mod.loader
 
         val root: JSONObject = if (file.exists() && file.isFile) {
@@ -212,37 +196,24 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             JSONObject()
         }
 
-        var versionObj: JSONObject
-        if (root.has(versionKey)) {
-            versionObj = root.getJSONObject(versionKey)
+        val outerObj: JSONObject = if (root.has(outerKey)) {
+            root.getJSONObject(outerKey)
         } else {
-            versionObj = JSONObject()
-            root.put(versionKey, versionObj)
+            JSONObject().also { root.put(outerKey, it) }
         }
-
-        var outerObj: JSONObject
-        if (versionObj.has(outerKey)) {
-            outerObj = versionObj.getJSONObject(outerKey)
-            outerObj.put(innerKey, value)
-        } else {
-            outerObj = JSONObject().put(innerKey, value)
-            versionObj.put(outerKey, outerObj)
-        }
+        outerObj.put(innerKey, value)
 
         file.writeText(root.toString(4))
     }
 
-    fun getConfigValue(versionKey: String, outerKey: String, innerKey: String): String? {
+    fun getConfigValue(outerKey: String, innerKey: String): String? {
         if (!file.exists() || !file.isFile) return null
 
         return try {
             val root = JSONObject(file.readText())
-            if (!root.has(versionKey)) return null
+            if (!root.has(outerKey)) return null
 
-            val versionObj = root.getJSONObject(versionKey)
-            if (!versionObj.has(outerKey)) return null
-
-            val outerObj = versionObj.getJSONObject(outerKey)
+            val outerObj = root.getJSONObject(outerKey)
             if (!outerObj.has(innerKey)) return null
 
             outerObj.getString(innerKey)
@@ -269,29 +240,21 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
 
         val removed = mutableListOf<String>()
 
-        fun matches(pattern: String, versionKey: String, loaderKey: String, innerKey: String): Boolean {
-            return pattern == innerKey ||
-                    pattern == "$loaderKey.$innerKey" ||
-                    pattern == "$versionKey.$loaderKey.$innerKey"
+        fun matches(pattern: String, loaderKey: String, innerKey: String): Boolean {
+            return pattern == innerKey || pattern == "$loaderKey.$innerKey"
         }
 
-        for (versionKey in root.keySet().toList()) {
-            val versionValue = root.opt(versionKey)
-            if (versionValue is JSONObject) {
-                for (loaderKey in versionValue.keySet().toList()) {
-                    val loaderValue = versionValue.opt(loaderKey)
-                    if (loaderValue is JSONObject) {
-                        for (innerKey in loaderValue.keySet().toList()) {
-                            if (keys.any { matches(it, versionKey, loaderKey, innerKey) }) {
-                                val value = loaderValue.opt(innerKey)?.toString().orEmpty()
-                                loaderValue.remove(innerKey)
-                                removed.add("$versionKey.$loaderKey.$innerKey = $value")
-                            }
-                        }
-                        if (loaderValue.isEmpty) versionValue.remove(loaderKey)
+        for (loaderKey in root.keySet().toList()) {
+            val loaderValue = root.opt(loaderKey)
+            if (loaderValue is JSONObject) {
+                for (innerKey in loaderValue.keySet().toList()) {
+                    if (keys.any { matches(it, loaderKey, innerKey) }) {
+                        val value = loaderValue.opt(innerKey)?.toString().orEmpty()
+                        loaderValue.remove(innerKey)
+                        removed.add("$loaderKey.$innerKey = $value")
                     }
                 }
-                if (versionValue.isEmpty) root.remove(versionKey)
+                if (loaderValue.isEmpty) root.remove(loaderKey)
             }
         }
 
@@ -314,17 +277,12 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         }
 
         val keys = mutableListOf<String>()
-        for (versionKey in root.keySet().toList()) {
-            val versionValue = root.opt(versionKey)
-            if (versionValue is JSONObject) {
-                for (loaderKey in versionValue.keySet().toList()) {
-                    val loaderValue = versionValue.opt(loaderKey)
-                    if (loaderValue is JSONObject) {
-                        for (innerKey in loaderValue.keySet().toList()) {
-                            val value = loaderValue.opt(innerKey)?.toString().orEmpty()
-                            keys.add("$versionKey.$loaderKey.$innerKey = $value")
-                        }
-                    }
+        for (loaderKey in root.keySet().toList()) {
+            val loaderValue = root.opt(loaderKey)
+            if (loaderValue is JSONObject) {
+                for (innerKey in loaderValue.keySet().toList()) {
+                    val value = loaderValue.opt(innerKey)?.toString().orEmpty()
+                    keys.add("$loaderKey.$innerKey = $value")
                 }
             }
         }
@@ -338,36 +296,6 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         }
         file.writeText("{}")
         project.logger.lifecycle("[Multiloader] Cache cleared: ${file.path}")
-    }
-
-    fun removeUnusedVersions(usedVersions: List<String>) {
-        if (!file.exists() || !file.isFile || file.readText().isEmpty()) {
-            project.logger.lifecycle("[Multiloader] dependencies.json not found or empty, nothing to remove.")
-            return
-        }
-
-        val root = try {
-            JSONObject(file.readText())
-        } catch (e: Exception) {
-            throw IOException(e)
-        }
-
-        val removed = mutableListOf<String>()
-
-        for (versionKey in root.keySet().toList()) {
-            if (versionKey !in usedVersions) {
-                root.remove(versionKey)
-                removed.add(versionKey)
-            }
-        }
-
-        file.writeText(root.toString(4))
-
-        if (removed.isEmpty()) {
-            project.logger.lifecycle("[Multiloader] No unused versions found.")
-        } else {
-            project.logger.lifecycle("[Multiloader] Removed unused versions:\n${removed.joinToString("\n") { "    $it" }}")
-        }
     }
 
     fun createDepFile() {

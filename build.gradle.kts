@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bizcub"
-version = "0.8.38"
+version = "0.10"
 
 tasks.jar {
     manifest {
@@ -16,21 +16,16 @@ repositories {
     mavenCentral()
     gradlePluginPortal()
     maven("https://maven.kikugie.dev/snapshots")
-
     maven("https://maven.fabricmc.net")
-    maven("https://maven.minecraftforge.net")
     maven("https://maven.neoforged.net/releases")
 }
 
 dependencies {
-    implementation("dev.kikugie:stonecutter:0.9.8")
     implementation("me.modmuss50:mod-publish-plugin:2.2.0")
     implementation("dev.kikugie:fletching-table:0.1.0-alpha.23")
 
     implementation("net.fabricmc:fabric-loom:1.17.20")
     implementation("net.minecraftforge:forgegradle:7.0.40")
-    implementation("net.minecraftforge:renamer-gradle:1.1.0")
-    implementation("net.minecraftforge:jarjar-gradle:0.2.3")
     implementation("net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.147")
 
     implementation("org.json:json:20231013")
@@ -46,7 +41,7 @@ gradlePlugin {
         create("multiloader") {
             id = "io.github.bizcub.multiloader"
             displayName = "Multiloader Plugin"
-            description = "A Gradle plugin that helps download and manage dependencies for multi-loader projects"
+            description = "A Gradle plugin for single-version multi-loader Minecraft mods"
             tags = listOf("multiloader", "multi-platform", "minecraft-modding")
             implementationClass = "io.github.bizcub.multiloader.MultiLoaderPlugin"
         }
