@@ -292,7 +292,13 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun addPublishDep(requirement: String, mrSlug: String, cfSlug: String = mrSlug) {
-        project.rootProject.extensions.configure<ModPublishExtension>("publishMods") {
+        val root = project.rootProject
+        @Suppress("UNCHECKED_CAST")
+        val seen = root.extra.properties["multiloader.publishDeps"] as? MutableSet<String>
+            ?: mutableSetOf<String>().also { root.extra["multiloader.publishDeps"] = it }
+        if (!seen.add("$requirement:$mrSlug:$cfSlug")) return
+
+        root.extensions.configure<ModPublishExtension>("publishMods") {
             modrinth {
                 when (requirement) {
                     "requires" -> requires(mrSlug)
@@ -533,7 +539,6 @@ open class MultiLoader(private val project: Project) {
                 minecraftVersionRange {
                     start.set(mod.pubStart)
                     end.set(mod.pubEnd)
-                    includeSnapshots.set(true)
                 }
             }
             curseforge {
