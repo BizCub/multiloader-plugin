@@ -15,22 +15,17 @@ import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.file.DuplicatesStrategy
-import org.gradle.api.file.RegularFile
 import org.gradle.api.initialization.Settings
 import org.gradle.api.logging.Logging
 import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.plugins.JavaPluginExtension
-import org.gradle.api.provider.Provider
-import org.gradle.api.publish.PublishingExtension
-import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
-import org.gradle.api.tasks.bundling.AbstractArchiveTask
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.kotlin.dsl.*
@@ -58,7 +53,7 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
             }
             is Project -> {
                 val multiloader = target.extensions.create("multiloader", MultiLoader::class.java, target)
-                target.logger.lifecycle("Running MultiLoader $version")
+                if (target == target.rootProject)  target.logger.lifecycle("Running MultiLoader $version")
 
                 if (target == target.rootProject) multiloader.firstInit()
                 else multiloader.init()
@@ -814,7 +809,7 @@ open class MultiLoader(private val project: Project) {
             isCommon || isFabric -> {
                 project.pluginManager.apply("fabric-loom")
                 if (isMainCTFileExist())
-                    project.extensions.getByType<LoomGradleExtensionAPI>().accessWidenerPath = awBuildFile
+                    project.extensions.getByType<LoomGradleExtensionAPI>().accessWidenerPath = ctMainFile
             }
             isNeoForge -> project.pluginManager.apply("net.neoforged.moddev")
             else -> {
@@ -963,6 +958,16 @@ open class MultiLoader(private val project: Project) {
                 getByName("server") { runDirectory.set(serverRunFile) }
             }
         }
+
+        val copyCommon = project.tasks.register<Copy>("copyCommonResources") {
+            from(resourcesDir)
+            from(generatedResourcesDir)
+            into(project.extensions.getByType<SourceSetContainer>()["main"].output.resourcesDir!!)
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        }
+
+        project.tasks.named("processResources") { finalizedBy(copyCommon) }
+        project.tasks.named("classes") { dependsOn(copyCommon) }
     }
 
     private fun configureForge() {
