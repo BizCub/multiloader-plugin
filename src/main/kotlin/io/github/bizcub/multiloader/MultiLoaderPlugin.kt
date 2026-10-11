@@ -465,10 +465,6 @@ open class MultiLoader(private val project: Project) {
 
     private fun registerRootTasks() {
         project.tasks {
-            register("updateDependencies") {
-                group = "multiloader"
-                doLast { updateDependencies.updateAllCachedDeps() }
-            }
             register("removeDependencyKeys") {
                 group = "multiloader"
                 doLast { removeDependencyKeys() }

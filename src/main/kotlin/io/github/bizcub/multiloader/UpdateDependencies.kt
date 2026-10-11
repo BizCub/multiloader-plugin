@@ -50,14 +50,6 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
         return configValue ?: downloadDependency(key, useId, ", because it was not found in the config")
     }
 
-    fun updateAllCachedDeps() {
-        listKeys().forEach { key -> forceUpdateDep(key) }
-    }
-
-    fun forceUpdateDep(key: String, useId: Boolean = false): String {
-        return downloadDependency(key, useId, " (forced update)")
-    }
-
     companion object {
         private val urlCache = HashMap<String, String>()
     }
