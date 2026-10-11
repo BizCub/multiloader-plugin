@@ -652,7 +652,6 @@ open class MultiLoader(private val project: Project) {
 
     private fun generateModMetadata() {
         buildResourcesDir.mkdirs()
-        buildResourcesDir.resolve("META-INF").mkdirs()
 
         val changeMap = listOf(
             "id" to mod.id,
@@ -678,15 +677,18 @@ open class MultiLoader(private val project: Project) {
 
         fun process(fileName: String, path: String = "", escapeNewLines: Boolean = false) {
             if (!resourcesDir.resolve(path).resolve(fileName).exists()) {
+                buildResourcesDir.resolve(path).mkdirs()
                 buildResourcesDir.resolve(path).resolve(fileName)
                     .writeText(getChangedResource("mod/$fileName", escapeNewLines))
             }
         }
 
-        process("pack.mcmeta")
         when {
             isFabric   -> process("fabric.mod.json", escapeNewLines = true)
-            isForge    -> process("mods.toml", "META-INF")
+            isForge    -> {
+                process("pack.mcmeta")
+                process("mods.toml", "META-INF")
+            }
             isNeoForge -> process("neoforge.mods.toml", "META-INF")
         }
     }
@@ -897,7 +899,7 @@ open class MultiLoader(private val project: Project) {
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
                 add("compileOnly", commonMain.output)
-//                add("runtimeOnly", commonMain.output)
+                add("runtimeOnly", commonMain.output)
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
