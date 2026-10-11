@@ -491,8 +491,6 @@ open class MultiLoader(private val project: Project) {
             destinationDirectory.set(rootDir.resolve("build/libs/${mod.version}"))
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-            if (mixinFile.exists()) manifest { attributes["MixinConfigs"] = mixinFile.name }
-
             loaderProjects.forEach { dependsOn(":$it:classes") }
 
             val seen = mutableSetOf<String>()
@@ -857,6 +855,15 @@ open class MultiLoader(private val project: Project) {
                 else       -> configureForge()
             }
             configureTasks()
+        }
+
+        project.tasks {
+            named<Jar>("jar") {
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+                if (mixinFile.exists()) {
+                    manifest { attributes["MixinConfigs"] = mixinFile.name }
+                }
+            }
         }
     }
 
