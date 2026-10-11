@@ -42,7 +42,7 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
             is Settings -> {
                 Logging.getLogger("multiloader").lifecycle("Running Settings MultiLoader $version")
 
-                target.rootProject.name = target.extra["mod.id"] as String
+                target.rootProject.name = target.extra["mod.name"] as String
 
                 val loaders = listOf("common", "fabric", "forge", "neoforge")
                 loaders.forEach { target.include(it) }
@@ -185,6 +185,7 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun replayLoaderBlock() {
+        if (isCommon) return
         val root = project.rootProject
         if (!root.extra.has("multiloader.loaderBlock")) return
         @Suppress("UNCHECKED_CAST")
@@ -839,8 +840,10 @@ open class MultiLoader(private val project: Project) {
         project.pluginManager.apply("java")
         project.pluginManager.apply("dev.kikugie.fletching-table")
 
-        replayLoaderBlock()
-        applyDependencies()
+        project.rootProject.afterEvaluate {
+            replayLoaderBlock()
+            applyDependencies()
+        }
 
         project.extensions.getByType(BasePluginExtension::class.java).apply {
             archivesName.set(mod.idDashed)
@@ -852,6 +855,8 @@ open class MultiLoader(private val project: Project) {
             targetCompatibility = javaVersion
             toolchain.languageVersion.set(JavaLanguageVersion.of(25))
         }
+
+        addDependency(repository = "api.modrinth.com/maven")
 
         project.afterEvaluate {
             when {
