@@ -807,10 +807,17 @@ open class MultiLoader(private val project: Project) {
             isNeoForge -> project.pluginManager.apply("net.neoforged.moddev")
             else -> {
                 project.pluginManager.apply("net.minecraftforge.gradle")
+
+                val commonMain = project.rootProject.project(":common")
+                    .extensions.getByType<SourceSetContainer>()["main"]
+
                 project.extensions.getByType<MinecraftExtensionForProject>().runs {
                     configureEach {
                         mods {
-//                            register("main") { source(getSourceSets()["main"]) }
+                            register("main") {
+                                source(getSourceSets()["main"])
+                                source(commonMain)
+                            }
                             if (getExtraSourceSet() != null)
                                 register("testmod") { source(getExtraSourceSet()!!) }
                         }
@@ -878,7 +885,6 @@ open class MultiLoader(private val project: Project) {
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
                 add("compileOnly", commonMain.output)
-                add("runtimeOnly", commonMain.output)
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
