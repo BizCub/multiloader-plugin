@@ -930,8 +930,8 @@ open class MultiLoader(private val project: Project) {
         fun configureTask(dependentTask: String, dependencyTask: String) {
             project.tasks.findByName(dependentTask)?.dependsOn(dependencyTask)
         }
-        configureTask("validateAccessWidener", ":processResources")
-        configureTask("createMinecraftArtifacts", ":processResources")
+        configureTask("validateAccessWidener", "processResources")
+        configureTask("createMinecraftArtifacts", "processResources")
 
         project.tasks.withType<ProcessResources>().configureEach {
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
