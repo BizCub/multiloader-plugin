@@ -178,6 +178,7 @@ open class MultiLoader(private val project: Project) {
         neoforgeFix()
         configureInit()
         project.gradle.projectsEvaluated {
+            access()
             generateModMetadata()
             mixinConfigRegistration()
             generateFabricModJson()
@@ -349,11 +350,9 @@ open class MultiLoader(private val project: Project) {
         project.pluginManager.apply("base")
         project.pluginManager.apply("me.modmuss50.mod-publish-plugin")
         project.pluginManager.apply("java")
-        project.pluginManager.apply("dev.kikugie.fletching-table")
 
         project.version = "${mod.version}+${mod.mc}"
 
-        access()
         registerMergedJarTask()
         registerRootTasks()
         configureModPublication()
@@ -463,8 +462,12 @@ open class MultiLoader(private val project: Project) {
 
     private fun access() {
         val ft = project.extensions.getByType<FletchingTableExtension>()
-        ft.accessConverter.register("main") {
-            add("${mod.idDashed}.ct")
+        val main = project.the<SourceSetContainer>().getByName("main")
+
+        ft.apply {
+            accessConverter.register(main) {
+                add("${mod.idDashed}.ct")
+            }
         }
     }
 
@@ -835,6 +838,7 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.pluginManager.apply("java")
+        project.pluginManager.apply("dev.kikugie.fletching-table")
 
         replayLoaderBlock()
         applyDependencies()
@@ -852,7 +856,7 @@ open class MultiLoader(private val project: Project) {
 
         project.afterEvaluate {
             when {
-                isCommon   -> configureCommon()
+                isCommon   -> configureFabric()
                 isFabric   -> configureFabric()
                 isNeoForge -> configureNeoForge()
                 else       -> configureForge()
@@ -950,7 +954,7 @@ open class MultiLoader(private val project: Project) {
     private fun configureFabric() {
         val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
         loom.apply {
-            //if (isMainCTFileExist()) accessWidenerPath.set(awBuildFile)
+            if (isMainCTFileExist()) accessWidenerPath = awBuildFile
             runConfigs {
                 getExtraSourceSet()?.let { ess -> configureEach { sourceSet = ess.name } }
                 getByName("client") { runDirectory.set(clientRunFile) }
@@ -963,8 +967,18 @@ open class MultiLoader(private val project: Project) {
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
         minecraft.apply {
             mappings("official", mod.mc)
-            //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
         }
+
+        val copyCommon = project.tasks.register<Copy>("copyCommonResources") {
+            from(resourcesDir)
+            from(generatedResourcesDir)
+            into(project.extensions.getByType<SourceSetContainer>()["main"].output.resourcesDir!!)
+            duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        }
+
+        project.tasks.named("processResources") { finalizedBy(copyCommon) }
+        project.tasks.named("classes") { dependsOn(copyCommon) }
     }
 
     private fun configureNeoForge() {
@@ -973,7 +987,7 @@ open class MultiLoader(private val project: Project) {
         project.pluginManager.apply("net.neoforged.moddev")
         project.extensions.configure<NeoForgeExtension> {
             version = getDep("neoforge")
-            //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
             val commonMain = project.rootProject.project(":common")
                 .extensions.getByType<SourceSetContainer>().named("main").get()
             mods {
