@@ -137,7 +137,7 @@ open class MultiLoader(private val project: Project) {
 
     private val rootDir: File get() = project.rootProject.projectDir
     private val resourcesDir: File get() = project.rootProject.project(":common").file("src/main/resources")
-    private val buildResourcesDir: File get() = project.file("build/resources/main")
+    private val buildResourcesDir: File get() = project.extensions.getByType<SourceSetContainer>()["main"].output.resourcesDir!!
 
     val clientRunFile: File get() = project.rootProject.file("run/client")
     val serverRunFile: File get() = project.rootProject.file("run/server")
@@ -176,6 +176,11 @@ open class MultiLoader(private val project: Project) {
     fun init() {
         neoforgeFix()
         configureInit()
+        project.gradle.projectsEvaluated {
+            generateModMetadata()
+            mixinConfigRegistration()
+            generateFabricModJson()
+        }
     }
 
     private var loaderBlock: (MultiLoader.() -> Unit)? = null
@@ -368,9 +373,6 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.gradle.projectsEvaluated {
-            generateModMetadata()
-            mixinConfigRegistration()
-            generateFabricModJson()
             createRunConfiguration()
         }
     }
@@ -659,7 +661,7 @@ open class MultiLoader(private val project: Project) {
             "mixin" to mod.idDashed,
             "name" to mod.name,
             "description" to mod.description,
-            "version" to project.version,
+            "version" to "${mod.version}+${mod.mc}",
             "modrinth" to mod.modrinth,
             "github" to mod.github,
             "author" to "Bizarre Cube",
@@ -916,6 +918,7 @@ open class MultiLoader(private val project: Project) {
 
         project.tasks.withType<JavaExec>().configureEach {
             if (name == "runClient") {
+                if (mixinFile.exists() && isForge) args("--mixin.config=${mixinFile.name}")
                 args("--username=$playerName", "--uuid=$playerUUID")
             }
             if (name == "runServer") {
