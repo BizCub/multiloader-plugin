@@ -963,7 +963,7 @@ open class MultiLoader(private val project: Project) {
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
         minecraft.apply {
             mappings("official", mod.mc)
-            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
         }
     }
 
@@ -973,7 +973,7 @@ open class MultiLoader(private val project: Project) {
         project.pluginManager.apply("net.neoforged.moddev")
         project.extensions.configure<NeoForgeExtension> {
             version = getDep("neoforge")
-            if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
+            //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
             val commonMain = project.rootProject.project(":common")
                 .extensions.getByType<SourceSetContainer>().named("main").get()
             mods {
