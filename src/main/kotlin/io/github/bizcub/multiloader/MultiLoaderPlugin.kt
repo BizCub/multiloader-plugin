@@ -137,7 +137,7 @@ open class MultiLoader(private val project: Project) {
 
     private val rootDir: File get() = project.rootProject.projectDir
     private val resourcesDir: File get() = project.rootProject.project(":common").file("src/main/resources")
-    private val buildResourcesDir: File get() = project.rootProject.project(":common").file("build/resources/main")
+    private val buildResourcesDir: File get() = project.file("build/resources/main")
 
     val clientRunFile: File get() = project.rootProject.file("run/client")
     val serverRunFile: File get() = project.rootProject.file("run/server")
@@ -684,16 +684,19 @@ open class MultiLoader(private val project: Project) {
         }
 
         process("pack.mcmeta")
-        process("fabric.mod.json", escapeNewLines = true)
-        process("mods.toml", "META-INF")
-        process("neoforge.mods.toml", "META-INF")
+        when {
+            isFabric   -> process("fabric.mod.json", escapeNewLines = true)
+            isForge    -> process("mods.toml", "META-INF")
+            isNeoForge -> process("neoforge.mods.toml", "META-INF")
+        }
     }
 
     private fun mixinConfigRegistration() {
-        listOf(
-            buildResourcesDir.resolve("META-INF/mods.toml"),
-            buildResourcesDir.resolve("META-INF/neoforge.mods.toml")
-        ).forEach { tomlFile ->
+        when {
+            isForge    -> listOf(buildResourcesDir.resolve("META-INF/mods.toml"))
+            isNeoForge -> listOf(buildResourcesDir.resolve("META-INF/neoforge.mods.toml"))
+            else       -> emptyList()
+        }.forEach { tomlFile ->
             if (!tomlFile.exists()) return@forEach
 
             val mapper = TomlMapper()
