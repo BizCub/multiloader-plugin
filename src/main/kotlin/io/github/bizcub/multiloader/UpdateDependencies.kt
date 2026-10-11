@@ -46,7 +46,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             return downloadDependency(key, useId, "")
         }
         val innerKey = if (key == "fabric" || key == "forge" || key == "neoforge") "loader" else key
-        val configValue = getConfigValue(mod.loader, innerKey)
+        val configValue = getConfigValue(ml.depLoader, innerKey)
         return configValue ?: downloadDependency(key, useId, ", because it was not found in the config")
     }
 
@@ -78,7 +78,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
             val obj = json.getJSONObject(i)
             obj.getJSONArray("game_versions").forEach { gameVersion ->
                 obj.getJSONArray("loaders").forEach { loader ->
-                    if (checkAppropriateVersions(gameVersion.toString()) && loader == mod.loader) {
+                    if (checkAppropriateVersions(gameVersion.toString()) && loader == ml.depLoader) {
                         return if (useId) obj.getString("id") else obj.getString("version_number")
                     }
                 }
@@ -176,7 +176,7 @@ class UpdateDependencies(val project: Project, val ml: MultiLoader) {
     }
 
     fun addToConfig(innerKey: String, value: String) {
-        val outerKey = mod.loader
+        val outerKey = ml.depLoader
 
         val root: JSONObject = if (file.exists() && file.isFile) {
             try {

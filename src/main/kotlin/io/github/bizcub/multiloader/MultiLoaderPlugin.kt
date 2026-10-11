@@ -147,6 +147,7 @@ open class MultiLoader(private val project: Project) {
     val isFabric: Boolean get() = project.name == "fabric"
     val isForge: Boolean get() = project.name == "forge"
     val isNeoForge: Boolean get() = project.name == "neoforge"
+    val depLoader: String get() = if (isCommon) "fabric" else mod.loader
 
     val playerName: String get() = "BizarreCube"
     val playerUUID: String get() = updateDependencies.getPlayerUUIDbyName(playerName)
@@ -185,7 +186,6 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun replayLoaderBlock() {
-        if (isCommon) return
         val root = project.rootProject
         if (!root.extra.has("multiloader.loaderBlock")) return
         @Suppress("UNCHECKED_CAST")
@@ -261,7 +261,7 @@ open class MultiLoader(private val project: Project) {
         return if (version.isEmpty()) {
             "maven.modrinth:simple-config-lib:${getDep("simple-config-lib")}"
         } else {
-            "io.github.bizcub:simple-config-lib:${version}-${mod.loader}+${mod.mc}"
+            "io.github.bizcub:simple-config-lib:${version}-${depLoader}+${mod.mc}"
         }
     }
 
