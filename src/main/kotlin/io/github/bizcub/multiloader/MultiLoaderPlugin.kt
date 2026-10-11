@@ -808,6 +808,13 @@ open class MultiLoader(private val project: Project) {
             else -> {
                 project.pluginManager.apply("net.minecraftforge.gradle")
                 project.extensions.getByType<MinecraftExtensionForProject>().runs {
+                    configureEach {
+                        mods {
+//                            register("main") { source(getSourceSets()["main"]) }
+                            if (getExtraSourceSet() != null)
+                                register("testmod") { source(getExtraSourceSet()!!) }
+                        }
+                    }
                     register("client") { workingDir.set(clientRunFile) }
                     register("server") { workingDir.set(serverRunFile) }
                 }
@@ -845,10 +852,18 @@ open class MultiLoader(private val project: Project) {
         project.repositories {
             for (rep in reps) maven(rep.repository)
             mavenLocal()
+
+            if (isForge) {
+                val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
+                val fg = project.extensions.getByType<ForgeGradleExtension>()
+                minecraft.mavenizer(this)
+                maven(fg.forgeMaven)
+                maven(fg.minecraftLibsMaven)
+            }
         }
 
         project.dependencies {
-            if (!isCommon) add("implementation", project.project(":common"))
+            if (!isCommon && !isForge) add("implementation", project.project(":common"))
 
             if (isCommon || isFabric) {
                 "minecraft"("com.mojang:minecraft:${mod.mc}")
@@ -863,6 +878,7 @@ open class MultiLoader(private val project: Project) {
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
                 add("compileOnly", commonMain.output)
+                add("runtimeOnly", commonMain.output)
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
@@ -919,15 +935,6 @@ open class MultiLoader(private val project: Project) {
         minecraft.apply {
             mappings("official", mod.mc)
             //if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
-
-            runs {
-                configureEach {
-                    mods {
-                        register("main") { source(getSourceSets()["main"]) }
-                        getExtraSourceSet()?.let { ess -> register(ess.name) { source(ess) } }
-                    }
-                }
-            }
         }
     }
 
