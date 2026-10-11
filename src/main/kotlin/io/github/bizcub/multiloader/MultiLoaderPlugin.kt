@@ -597,6 +597,8 @@ open class MultiLoader(private val project: Project) {
         val dir = rootDir.resolve(".idea/runConfigurations")
         dir.mkdirs()
 
+        dir.listFiles { f -> f.extension == "xml" }?.forEach(File::delete)
+
         val desired = linkedMapOf<String, String>()
 
         fun add(name: String, task: String, folder: String = "") {
@@ -626,13 +628,8 @@ open class MultiLoader(private val project: Project) {
         add("Publish Curseforge", "publishCurseforge", "Publish")
         add("Publish Github", "publishGithub", "Publish")
 
-        dir.listFiles { f -> f.extension == "xml" && f.name.startsWith("Multiloader_") }
-            ?.filter { it.name !in desired }
-            ?.forEach(File::delete)
-
         desired.forEach { (name, content) ->
-            val file = dir.resolve(name)
-            if (!file.exists() || file.readText() != content) file.writeText(content)
+            dir.resolve(name).writeText(content)
         }
     }
 
