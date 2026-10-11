@@ -811,8 +811,11 @@ open class MultiLoader(private val project: Project) {
 
     private fun configureInit() {
         when {
-            isCommon   -> project.pluginManager.apply("fabric-loom")
-            isFabric   -> project.pluginManager.apply("fabric-loom")
+            isCommon || isFabric -> {
+                project.pluginManager.apply("fabric-loom")
+                if (isMainCTFileExist())
+                    project.extensions.getByType<LoomGradleExtensionAPI>().accessWidenerPath = awBuildFile
+            }
             isNeoForge -> project.pluginManager.apply("net.neoforged.moddev")
             else -> {
                 project.pluginManager.apply("net.minecraftforge.gradle")
@@ -954,7 +957,6 @@ open class MultiLoader(private val project: Project) {
     private fun configureFabric() {
         val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
         loom.apply {
-            if (isMainCTFileExist()) accessWidenerPath = awBuildFile
             runConfigs {
                 getExtraSourceSet()?.let { ess -> configureEach { sourceSet = ess.name } }
                 getByName("client") { runDirectory.set(clientRunFile) }
