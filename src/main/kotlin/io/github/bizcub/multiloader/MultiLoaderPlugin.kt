@@ -180,8 +180,6 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
-    private var loaderBlock: (MultiLoader.() -> Unit)? = null
-
     fun configureLoaders(block: MultiLoader.() -> Unit) {
         project.rootProject.extra["multiloader.loaderBlock"] = block
     }
@@ -287,8 +285,6 @@ open class MultiLoader(private val project: Project) {
         if (getSourceSets().count() > 2)
             getSourceSets().first { it.name != "main" && it.name != "test" }
         else null
-
-    private fun realPublishTarget(platform: String) = if (platform == "All") "Mods" else platform
 
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
         project.rootProject.extensions.configure("publishMods", block)
@@ -944,9 +940,6 @@ open class MultiLoader(private val project: Project) {
                 args("--nogui")
             }
         }
-    }
-
-    private fun configureCommon() {
     }
 
     private fun configureFabric() {
