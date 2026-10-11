@@ -938,15 +938,6 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureForge() {
-        val commonResources = project.rootProject.project(":common")
-            .extensions.getByType<SourceSetContainer>()["main"].resources
-
-        project.tasks.named<ProcessResources>("processResources") {
-            from(commonResources)
-            duplicatesStrategy = DuplicatesStrategy.INCLUDE
-            dependsOn(":common:processResources")
-        }
-
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
         minecraft.apply {
             mappings("official", mod.mc)
