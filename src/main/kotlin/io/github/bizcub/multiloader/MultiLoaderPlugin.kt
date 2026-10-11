@@ -814,7 +814,7 @@ open class MultiLoader(private val project: Project) {
                 project.extensions.getByType<MinecraftExtensionForProject>().runs {
                     configureEach {
                         mods {
-                            register("main") {
+                            register(mod.id) {
                                 source(getSourceSets()["main"])
                                 source(commonMain)
                             }
@@ -885,6 +885,7 @@ open class MultiLoader(private val project: Project) {
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
                 add("compileOnly", commonMain.output)
+//                add("runtimeOnly", commonMain.output)
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
@@ -937,6 +938,15 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureForge() {
+        val commonResources = project.rootProject.project(":common")
+            .extensions.getByType<SourceSetContainer>()["main"].resources
+
+        project.tasks.named<ProcessResources>("processResources") {
+            from(commonResources)
+            duplicatesStrategy = DuplicatesStrategy.INCLUDE
+            dependsOn(":common:processResources")
+        }
+
         val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
         minecraft.apply {
             mappings("official", mod.mc)
