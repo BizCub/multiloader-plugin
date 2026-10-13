@@ -6,7 +6,7 @@
         <option name="scriptParameters"/>
         <option name="taskNames">
             <list>
-                <option value="%TASK%"/>
+%TASKS%
             </list>
         </option>
         <option name="vmOptions"/>

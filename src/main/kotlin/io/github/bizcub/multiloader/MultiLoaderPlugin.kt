@@ -620,13 +620,18 @@ open class MultiLoader(private val project: Project) {
 
         val desired = linkedMapOf<String, String>()
 
-        fun add(name: String, task: String, folder: String = "") {
+        fun add(name: String, tasks: List<String>, folder: String = "") {
             val fileName = name.replace(" ", "")
             val folderAttr = if (folder.isEmpty()) "" else " folderName=\"$folder\""
+            val tasksXml = tasks.joinToString("\n") { "                <option value=\"$it\"/>" }
             desired["Multiloader_$fileName.xml"] = getResource("runConfiguration/main.xml")
                 .replace("%NAME%", name)
-                .replace("%TASK%", task)
+                .replace("%TASKS%", tasksXml)
                 .replace("%FOLDER%", folderAttr)
+        }
+
+        fun add(name: String, task: String, folder: String = "") {
+            add(name, listOf(task), folder)
         }
 
         add("Run Fabric Client", ":fabric:runClient", "Run")
@@ -635,6 +640,9 @@ open class MultiLoader(private val project: Project) {
         add("Run Forge Server", ":forge:runServer", "Run")
         add("Run NeoForge Client", ":neoforge:runClient", "Run")
         add("Run NeoForge Server", ":neoforge:runServer", "Run")
+
+        add("Run All Clients", listOf(":fabric:runClient", ":forge:runClient", ":neoforge:runClient"), "Run")
+        add("Run All Servers", listOf(":fabric:runServer", ":forge:runServer", ":neoforge:runServer"), "Run")
 
         add("Build", "buildMerged", "Build")
 
