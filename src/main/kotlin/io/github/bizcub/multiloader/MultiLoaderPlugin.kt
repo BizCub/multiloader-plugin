@@ -897,7 +897,6 @@ open class MultiLoader(private val project: Project) {
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
                 add("compileOnly", commonMain.output)
-                add("runtimeOnly", commonMain.output)
             }
 
             for (dep in deps) add(dep.configuration, dep.dependency) {
@@ -969,10 +968,15 @@ open class MultiLoader(private val project: Project) {
             if (isMainCTFileExist()) accessTransformers.from(atBuildFile)
         }
 
+        val commonMain = project.rootProject.project(":common")
+            .extensions.getByType<SourceSetContainer>()["main"]
+
         val copyCommon = project.tasks.register<Copy>("copyCommonResources") {
             from(resourcesDir)
             from(generatedResourcesDir)
+            commonMain.output.classesDirs.forEach { from(it) }
             into(project.extensions.getByType<SourceSetContainer>()["main"].output.resourcesDir!!)
+            dependsOn(":common:classes")
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
         }
 
