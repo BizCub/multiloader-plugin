@@ -135,15 +135,20 @@ open class MultiLoader(private val project: Project) {
 
     private val rootDir: File get() = project.rootProject.projectDir
     private val resourcesDir: File get() = project.rootProject.project(":common").file("src/main/resources")
+    private val loaderResourcesDir: File get() = project.file("src/main/resources")
     private val buildResourcesDir: File get() = project.file("build/resources/main")
     private val generatedResourcesDir: File get() = project.file("build/generated/mod-metadata")
 
     val clientRunFile: File get() = project.rootProject.file("run/client")
     val serverRunFile: File get() = project.rootProject.file("run/server")
     val iconFile: File get() = resourcesDir.resolve("icon.png")
-    val mixinFile: File get() = resourcesDir.resolve("${mod.idDashed}.mixins.json")
+    val mixinFile: File
+        get() {
+            val loaderSpecific = loaderResourcesDir.resolve("${mod.idDashed}.${mod.loader}.mixins.json")
+            return if (loaderSpecific.exists()) loaderSpecific
+            else resourcesDir.resolve("${mod.idDashed}.mixins.json")
+        }
     val ctMainFile: File get() = resourcesDir.resolve("${mod.idDashed}.ct")
-    val awBuildFile: File get() = buildResourcesDir.resolve("${mod.idDashed}.ct")
     val atBuildFile: File get() = buildResourcesDir.resolve("META-INF/accesstransformer.cfg")
 
     val isCommon: Boolean get() = project.name == "common"
