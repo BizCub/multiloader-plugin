@@ -208,19 +208,27 @@ open class MultiLoader(private val project: Project) {
         this.block()
     }
 
-    fun addSourceSet(name: String) {
+    private val extraModIds = mutableMapOf<String, String>()
+
+    fun addSourceSet(name: String, modId: String = "") {
+        if (modId.isNotEmpty()) extraModIds[name] = modId
+
         val sourceSets = getSourceSets()
-        val commonSourceSet = project.rootProject.project(":common")
-            .extensions.getByType<SourceSetContainer>().findByName(name)
-        sourceSets.create(name) {
-            java {
-                compileClasspath += sourceSets["main"].compileClasspath + sourceSets["main"].output
-                runtimeClasspath += sourceSets["main"].runtimeClasspath + sourceSets["main"].output
-                commonSourceSet?.let {
-                    compileClasspath += it.output
-                    runtimeClasspath += it.output
-                }
+        val commonProject = project.rootProject.project(":common")
+        val commonSourceSets = commonProject.extensions.getByType<SourceSetContainer>()
+
+        val commonSourceSet = commonSourceSets.findByName(name)
+            ?: commonSourceSets.create(name).also { css ->
+                css.compileClasspath += commonSourceSets["main"].compileClasspath + commonSourceSets["main"].output
+                css.runtimeClasspath += commonSourceSets["main"].runtimeClasspath + commonSourceSets["main"].output
             }
+
+        if (sourceSets.findByName(name) != null) return
+
+        val main = sourceSets["main"]
+        sourceSets.create(name) {
+            compileClasspath += main.compileClasspath + main.output + commonSourceSet.output
+            runtimeClasspath += main.runtimeClasspath + main.output + commonSourceSet.output
         }
     }
 
@@ -303,10 +311,8 @@ open class MultiLoader(private val project: Project) {
     private fun getSourceSets(): SourceSetContainer =
         project.extensions.getByType<SourceSetContainer>()
 
-    private fun getExtraSourceSet(): SourceSet? =
-        if (getSourceSets().count() > 2)
-            getSourceSets().first { it.name != "main" && it.name != "test" }
-        else null
+    private fun getExtraSourceSets(): List<SourceSet> =
+        getSourceSets().filter { it.name != "main" && it.name != "test" }
 
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
         project.rootProject.extensions.configure("publishMods", block)
@@ -858,8 +864,14 @@ open class MultiLoader(private val project: Project) {
                                 source(getSourceSets()["main"])
                                 source(commonMain)
                             }
-                            if (getExtraSourceSet() != null)
-                                register("testmod") { source(getExtraSourceSet()!!) }
+                            val commonSourceSets = project.rootProject.project(":common")
+                                .extensions.getByType<SourceSetContainer>()
+                            getExtraSourceSets().forEach { ess ->
+                                register(extraModIds[ess.name] ?: ess.name) {
+                                    source(ess)
+                                    commonSourceSets.findByName(ess.name)?.let { source(it) }
+                                }
+                            }
                         }
                     }
                     register("client") { workingDir.set(clientRunFile) }
@@ -975,11 +987,21 @@ open class MultiLoader(private val project: Project) {
 
     private fun configureFabric() {
         val loom = project.extensions.getByType<LoomGradleExtensionAPI>()
+        val commonSourceSets = project.rootProject.project(":common")
+            .extensions.getByType<SourceSetContainer>()
+
         loom.apply {
             runConfigs {
-                getExtraSourceSet()?.let { ess -> configureEach { sourceSet = ess.name } }
                 getByName("client") { runDirectory.set(clientRunFile) }
                 getByName("server") { runDirectory.set(serverRunFile) }
+            }
+            mods {
+                getExtraSourceSets().forEach { ess ->
+                    create(extraModIds[ess.name] ?: ess.name) {
+                        sourceSet(ess)
+                        commonSourceSets.findByName(ess.name)?.let { sourceSet(it) }
+                    }
+                }
             }
         }
 
@@ -1030,7 +1052,14 @@ open class MultiLoader(private val project: Project) {
                 register("main") {
                     sourceSet(getSourceSets().named("main").get())
                     sourceSet(commonMain)
-                    getExtraSourceSet()?.let { ess -> sourceSet(ess) }
+                }
+                val commonSourceSets = project.rootProject.project(":common")
+                    .extensions.getByType<SourceSetContainer>()
+                getExtraSourceSets().forEach { ess ->
+                    register(extraModIds[ess.name] ?: ess.name) {
+                        sourceSet(ess)
+                        commonSourceSets.findByName(ess.name)?.let { sourceSet(it) }
+                    }
                 }
             }
             runs {
