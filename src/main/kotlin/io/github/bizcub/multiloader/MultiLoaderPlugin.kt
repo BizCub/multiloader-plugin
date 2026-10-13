@@ -210,10 +210,16 @@ open class MultiLoader(private val project: Project) {
 
     fun addSourceSet(name: String) {
         val sourceSets = getSourceSets()
+        val commonSourceSet = project.rootProject.project(":common")
+            .extensions.getByType<SourceSetContainer>().findByName(name)
         sourceSets.create(name) {
             java {
                 compileClasspath += sourceSets["main"].compileClasspath + sourceSets["main"].output
                 runtimeClasspath += sourceSets["main"].runtimeClasspath + sourceSets["main"].output
+                commonSourceSet?.let {
+                    compileClasspath += it.output
+                    runtimeClasspath += it.output
+                }
             }
         }
     }
