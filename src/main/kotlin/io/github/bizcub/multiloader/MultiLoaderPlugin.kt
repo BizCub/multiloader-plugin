@@ -148,6 +148,13 @@ open class MultiLoader(private val project: Project) {
             return if (loaderSpecific.exists()) loaderSpecific
             else resourcesDir.resolve("${mod.idDashed}.mixins.json")
         }
+    val mixinFiles: List<File>
+        get() = loaderProjects
+            .map { project.rootProject.project(":$it").file("src/main/resources") }
+            .flatMap { it.listFiles()?.toList() ?: emptyList() }
+            .filter { it.name.startsWith("${mod.idDashed}.") && it.name.endsWith("mixins.json") }
+
+    val hasMixinConfigs: Boolean get() = mixinFile.exists() || mixinFiles.isNotEmpty()
     val ctMainFile: File get() = resourcesDir.resolve("${mod.idDashed}.ct")
     val atBuildFile: File get() = buildResourcesDir.resolve("META-INF/accesstransformer.cfg")
 
@@ -498,8 +505,12 @@ open class MultiLoader(private val project: Project) {
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
             manifest {
-                if (mixinFile.exists()) {
-                    attributes["MixinConfigs"] = mixinFile.name
+                val forgeMixin = project.rootProject.project(":forge")
+                    .file("src/main/resources")
+                    .resolve("${mod.idDashed}.forge.mixins.json")
+                when {
+                    forgeMixin.exists() -> attributes["MixinConfigs"] = forgeMixin.name
+                    mixinFile.exists() -> attributes["MixinConfigs"] = mixinFile.name
                 }
             }
 
@@ -719,7 +730,7 @@ open class MultiLoader(private val project: Project) {
             if (iconFile.exists()) mods[0]["logoFile"] = "icon.png"
             if (iconFile.exists()) mods[0]["iconFile"] = "icon.png"
 
-            if (mixinFile.exists()) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
+            if (hasMixinConfigs) data["mixins"] = listOf(mapOf("config" to mixinFile.name))
 
             mapper.writeValue(tomlFile, data)
         }
@@ -740,7 +751,7 @@ open class MultiLoader(private val project: Project) {
 
         val mixinsKey = JSONArray()
         json.put("mixins", mixinsKey)
-        if (mixinFile.exists()) mixinsKey.put(mixinFile.name)
+        if (hasMixinConfigs) mixinsKey.put(mixinFile.name)
 
         if (isMainCTFileExist()) json.put("accessWidener", "${mod.idDashed}.ct")
         if (iconFile.exists()) json.put("icon", "icon.png")
@@ -938,7 +949,7 @@ open class MultiLoader(private val project: Project) {
 
         project.tasks.withType<JavaExec>().configureEach {
             if (name == "runClient") {
-                if (mixinFile.exists() && isForge) args("--mixin.config=${mixinFile.name}")
+                if (hasMixinConfigs && isForge) args("--mixin.config=${mixinFile.name}")
                 args("--username=$playerName", "--uuid=$playerUUID")
             }
             if (name == "runServer") {
