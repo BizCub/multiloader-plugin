@@ -47,8 +47,7 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
                 val loaders = listOf("common", "fabric", "forge", "neoforge")
                 loaders.forEach {
                     target.include(it)
-                    target.rootDir.resolve(it).resolve("src/main/java").mkdirs()
-                    target.rootDir.resolve(it).resolve("src/main/resources").mkdirs()
+                    target.rootDir.resolve(it).mkdirs()
                 }
 
                 target.gradle.allprojects {
