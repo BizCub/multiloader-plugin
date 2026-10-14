@@ -726,6 +726,16 @@ open class MultiLoader(private val project: Project) {
             isForge    -> {
                 process("pack.mcmeta")
                 process("mods.toml", "META-INF")
+                getExtraSourceSets().forEach { ess ->
+                    val modId = extraModIds[ess.name] ?: ess.name
+                    val dir = project.file("build/generated/mod-metadata-${ess.name}/META-INF")
+                    dir.mkdirs()
+                    var content = getResource("mod/mods.toml")
+                    changeMap.map { (k, v) -> if (k == "id") k to modId else k to v }.forEach { (k, v) ->
+                        content = content.replace($$"${$${k}}", v)
+                    }
+                    dir.resolve("mods.toml").writeText(content)
+                }
             }
             isNeoForge -> process("neoforge.mods.toml", "META-INF")
         }
@@ -971,8 +981,15 @@ open class MultiLoader(private val project: Project) {
 
         project.tasks.withType<ProcessResources>().configureEach {
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-            from(generatedResourcesDir)
-            if (!isCommon) from(resourcesDir)
+            val extra = getExtraSourceSets().firstOrNull { it.processResourcesTaskName == name }
+            if (isForge && extra != null) {
+                from(generatedResourcesDir) { exclude("META-INF/mods.toml") }
+                from(resourcesDir) { exclude("META-INF/mods.toml") }
+                from(project.file("build/generated/mod-metadata-${extra.name}"))
+            } else {
+                from(generatedResourcesDir)
+                if (!isCommon) from(resourcesDir)
+            }
         }
 
         project.tasks.withType<JavaExec>().configureEach {
