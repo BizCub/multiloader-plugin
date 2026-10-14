@@ -861,8 +861,6 @@ open class MultiLoader(private val project: Project) {
 
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
-                val commonSourceSets = project.rootProject.project(":common")
-                    .extensions.getByType<SourceSetContainer>()
 
                 project.extensions.getByType<MinecraftExtensionForProject>().runs {
                     configureEach {
@@ -871,6 +869,8 @@ open class MultiLoader(private val project: Project) {
                                 source(getSourceSets()["main"])
                                 source(commonMain)
                             }
+                            val commonSourceSets = project.rootProject.project(":common")
+                                .extensions.getByType<SourceSetContainer>()
                             getExtraSourceSets().forEach { ess ->
                                 register(extraModIds[ess.name] ?: ess.name) {
                                     source(ess)
