@@ -844,6 +844,11 @@ open class MultiLoader(private val project: Project) {
     }
 
     private fun configureInit() {
+        project.pluginManager.apply("java")
+        project.pluginManager.apply("dev.kikugie.fletching-table")
+
+        replayLoaderBlock()
+
         when {
             isCommon || isFabric -> {
                 project.pluginManager.apply("fabric-loom")
@@ -856,6 +861,8 @@ open class MultiLoader(private val project: Project) {
 
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
+                val commonSourceSets = project.rootProject.project(":common")
+                    .extensions.getByType<SourceSetContainer>()
 
                 project.extensions.getByType<MinecraftExtensionForProject>().runs {
                     configureEach {
@@ -864,8 +871,6 @@ open class MultiLoader(private val project: Project) {
                                 source(getSourceSets()["main"])
                                 source(commonMain)
                             }
-                            val commonSourceSets = project.rootProject.project(":common")
-                                .extensions.getByType<SourceSetContainer>()
                             getExtraSourceSets().forEach { ess ->
                                 register(extraModIds[ess.name] ?: ess.name) {
                                     source(ess)
@@ -879,9 +884,6 @@ open class MultiLoader(private val project: Project) {
                 }
             }
         }
-
-        project.pluginManager.apply("java")
-        project.pluginManager.apply("dev.kikugie.fletching-table")
 
         project.rootProject.afterEvaluate {
             replayLoaderBlock()
