@@ -992,6 +992,19 @@ open class MultiLoader(private val project: Project) {
             }
         }
 
+        project.tasks.matching { it.name == "runClient" || it.name == "runServer" }.configureEach {
+            dependsOn(getExtraSourceSets().map { it.classesTaskName })
+            dependsOn(
+                getExtraSourceSets()
+                    .mapNotNull { ess ->
+                        project.rootProject.project(":common")
+                            .extensions.getByType<SourceSetContainer>()
+                            .findByName(ess.name)?.classesTaskName
+                    }
+                    .map { ":common:$it" }
+            )
+        }
+
         project.tasks.withType<JavaExec>().configureEach {
             if (name == "runClient") {
                 if (hasMixinConfigs && isForge) args("--mixin.config=${mixinFile.name}")
