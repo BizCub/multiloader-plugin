@@ -213,6 +213,12 @@ open class MultiLoader(private val project: Project) {
     fun addSourceSet(name: String, modId: String = "") {
         if (modId.isNotEmpty()) extraModIds[name] = modId
 
+        val root = project.rootProject
+        @Suppress("UNCHECKED_CAST")
+        val set = root.extra.properties["multiloader.extraSourceSets"] as? MutableSet<String>
+            ?: mutableSetOf<String>().also { root.extra["multiloader.extraSourceSets"] = it }
+        set += name
+
         val sourceSets = getSourceSets()
         val commonProject = project.rootProject.project(":common")
         val commonSourceSets = commonProject.extensions.getByType<SourceSetContainer>()
@@ -314,6 +320,11 @@ open class MultiLoader(private val project: Project) {
     private fun getExtraSourceSets(): List<SourceSet> =
         getSourceSets().filter { it.name != "main" && it.name != "test" }
 
+    private fun getRootExtraSourceSets(): Set<String> {
+        @Suppress("UNCHECKED_CAST")
+        return project.rootProject.extra.properties["multiloader.extraSourceSets"] as? Set<String> ?: emptySet()
+    }
+
     private fun publishMods(block: ModPublishExtension.() -> Unit) {
         project.rootProject.extensions.configure("publishMods", block)
     }
@@ -398,6 +409,7 @@ open class MultiLoader(private val project: Project) {
         }
 
         project.gradle.projectsEvaluated {
+            registerExtraJarTasks()
             createRunConfiguration()
         }
     }
@@ -544,6 +556,45 @@ open class MultiLoader(private val project: Project) {
         }
     }
 
+    private fun registerExtraJarTasks() {
+        getRootExtraSourceSets().forEach { ssName ->
+            val taskName = "build${ssName.replaceFirstChar { it.uppercase() }}"
+            if (project.tasks.names.contains(taskName)) return@forEach
+
+            project.tasks.register<Jar>(taskName) {
+                group = "build"
+                archiveFileName.set("${mod.idDashed}-${mod.version}+${mod.mc}-$ssName.jar")
+                destinationDirectory.set(rootDir.resolve("build/libs/${mod.version}"))
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+                manifest {
+                    val forgeMixin = project.rootProject.project(":forge")
+                        .file("src/main/resources")
+                        .resolve("${mod.idDashed}.forge.mixins.json")
+                    when {
+                        forgeMixin.exists() -> attributes["MixinConfigs"] = forgeMixin.name
+                        mixinFile.exists() -> attributes["MixinConfigs"] = mixinFile.name
+                    }
+                }
+
+                val seen = mutableSetOf<String>()
+                loaderProjects.forEach { name ->
+                    val sub = project.rootProject.project(":$name")
+                    val ss = sub.extensions.getByType<SourceSetContainer>().findByName(ssName) ?: return@forEach
+                    dependsOn(":$name:${ss.classesTaskName}")
+                    from(ss.output.classesDirs) {
+                        eachFile {
+                            if (!seen.add(path)) {
+                                logger.warn("[Multiloader] class collision across loaders: $path (from :$name)")
+                            }
+                        }
+                    }
+                    ss.output.resourcesDir?.let { from(it) }
+                }
+            }
+        }
+    }
+
     private fun configureModPublication() {
         mod.pubStart = mod.mc
         mod.pubEnd = if (prop("multiloader.lockPublishVersion") == "true") mod.mc else "latest"
@@ -657,6 +708,10 @@ open class MultiLoader(private val project: Project) {
         add("Run All Servers", listOf(":fabric:runServer", ":forge:runServer", ":neoforge:runServer"), "Run")
 
         add("Build", "buildMerged", "Build")
+        getRootExtraSourceSets().forEach { ssName ->
+            val capitalized = ssName.replaceFirstChar { it.uppercase() }
+            add("Build $capitalized", "build$capitalized", "Build")
+        }
 
         add("Update Dependencies", "updateDependencies", "Cache")
         add("Clear Cache", "clearCache", "Cache")
