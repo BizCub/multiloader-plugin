@@ -10,6 +10,8 @@ import me.modmuss50.mpp.platforms.modrinth.ModrinthEnvironment
 import net.fabricmc.loom.api.LoomGradleExtensionAPI
 import net.minecraftforge.gradle.ForgeGradleExtension
 import net.minecraftforge.gradle.MinecraftExtensionForProject
+
+import net.minecraftforge.jarjar.gradle.JarJarExtension
 import net.neoforged.moddevgradle.dsl.NeoForgeExtension
 import org.gradle.api.JavaVersion
 import org.gradle.api.Plugin
@@ -538,6 +540,12 @@ open class MultiLoader(private val project: Project) {
                 }
             }
 
+            val forgeJarJar = project.rootProject.project(":forge").tasks.named<Jar>("jarJar")
+            dependsOn(forgeJarJar)
+            from(forgeJarJar.flatMap { it.archiveFile }.map { project.zipTree(it.asFile) }) {
+                include("META-INF/jarjar/**")
+            }
+
             loaderProjects.forEach { dependsOn(":$it:classes") }
 
             val seen = mutableSetOf<String>()
@@ -924,6 +932,9 @@ open class MultiLoader(private val project: Project) {
             else -> {
                 project.pluginManager.apply("net.minecraftforge.gradle")
 
+                project.pluginManager.apply("net.minecraftforge.jarjar")
+                project.extensions.configure<JarJarExtension> { register() }
+
                 val commonMain = project.rootProject.project(":common")
                     .extensions.getByType<SourceSetContainer>()["main"]
 
@@ -1004,7 +1015,10 @@ open class MultiLoader(private val project: Project) {
             if (isForge) {
                 val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
                 "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
+
                 "runtimeOnly"("io.github.llamalad7:mixinextras-forge:0.5.5")
+                "jarJar"("io.github.llamalad7:mixinextras-forge:0.5.5")
+
                 "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
 
                 val commonMain = project.rootProject.project(":common")

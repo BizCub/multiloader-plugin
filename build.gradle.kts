@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.bizcub"
-version = "0.10.1"
+version = "0.10.3"
 
 tasks.jar {
     manifest {
@@ -28,6 +28,7 @@ dependencies {
 
     implementation("net.fabricmc:fabric-loom:1.17.20")
     implementation("net.minecraftforge:forgegradle:7.0.40")
+    implementation("net.minecraftforge.jarjar:net.minecraftforge.jarjar.gradle.plugin:0.2.3")
     implementation("net.neoforged.moddev:net.neoforged.moddev.gradle.plugin:2.0.147")
 
     implementation("org.json:json:20231013")
