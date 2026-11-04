@@ -1004,6 +1004,7 @@ open class MultiLoader(private val project: Project) {
             if (isForge) {
                 val minecraft = project.extensions.getByType<MinecraftExtensionForProject>()
                 "implementation"(minecraft.dependency("net.minecraftforge:forge:${getDep("forge")}"))
+                "runtimeOnly"("io.github.llamalad7:mixinextras-forge:0.5.5")
                 "annotationProcessor"("net.minecraftforge:eventbus-validator:7.0.0")
 
                 val commonMain = project.rootProject.project(":common")
