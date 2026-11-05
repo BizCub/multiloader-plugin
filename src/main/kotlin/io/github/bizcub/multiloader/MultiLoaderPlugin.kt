@@ -212,6 +212,8 @@ open class MultiLoader(private val project: Project) {
 
     private val extraModIds = mutableMapOf<String, String>()
 
+    private val extraRunSourceSets = mutableSetOf<String>()
+
     fun addSourceSet(name: String, modId: String = "") {
         if (modId.isNotEmpty()) extraModIds[name] = modId
 
@@ -231,12 +233,40 @@ open class MultiLoader(private val project: Project) {
                 css.runtimeClasspath += commonSourceSets["main"].runtimeClasspath + commonSourceSets["main"].output
             }
 
-        if (sourceSets.findByName(name) != null) return
+        val extraSourceSet = sourceSets.findByName(name) ?: run {
+            val main = sourceSets["main"]
+            sourceSets.create(name) {
+                compileClasspath += main.compileClasspath + main.output + commonSourceSet.output
+                runtimeClasspath += main.runtimeClasspath + main.output + commonSourceSet.output
+            }
+        }
 
-        val main = sourceSets["main"]
-        sourceSets.create(name) {
-            compileClasspath += main.compileClasspath + main.output + commonSourceSet.output
-            runtimeClasspath += main.runtimeClasspath + main.output + commonSourceSet.output
+        if (isFabric && extraRunSourceSets.add(name)) {
+            project.dependencies.add("runtimeOnly", extraSourceSet.output)
+            commonSourceSets.findByName(name)
+                ?.takeIf { it.allSource.files.isNotEmpty() }
+                ?.let { project.dependencies.add("runtimeOnly", it.output) }
+        }
+
+        if (isForge && extraRunSourceSets.add(name)) {
+            project.dependencies.add("runtimeOnly", extraSourceSet.output)
+            val copyCommonExtra = project.tasks.register<Copy>("copy${name.replaceFirstChar { it.uppercase() }}Common") {
+                from(commonSourceSet.output)
+                into(extraSourceSet.output.resourcesDir!!)
+                dependsOn(commonSourceSet.classesTaskName.let { ":common:$it" })
+                dependsOn(extraSourceSet.processResourcesTaskName)
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+            }
+            project.tasks.named(extraSourceSet.classesTaskName) { dependsOn(copyCommonExtra) }
+
+            project.extensions.getByType<MinecraftExtensionForProject>().runs.configureEach {
+                mods {
+                    register(modId.ifEmpty { name }) {
+                        source(extraSourceSet)
+                        source(commonSourceSet)
+                    }
+                }
+            }
         }
     }
 
@@ -944,14 +974,6 @@ open class MultiLoader(private val project: Project) {
                             register(mod.id) {
                                 source(getSourceSets()["main"])
                                 source(commonMain)
-                            }
-                            val commonSourceSets = project.rootProject.project(":common")
-                                .extensions.getByType<SourceSetContainer>()
-                            getExtraSourceSets().forEach { ess ->
-                                register(extraModIds[ess.name] ?: ess.name) {
-                                    source(ess)
-                                    commonSourceSets.findByName(ess.name)?.let { source(it) }
-                                }
                             }
                         }
                     }
