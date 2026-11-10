@@ -263,7 +263,6 @@ open class MultiLoader(private val project: Project) {
                 mods {
                     register(modId.ifEmpty { name }) {
                         source(extraSourceSet)
-                        source(commonSourceSet)
                     }
                 }
             }
@@ -295,7 +294,7 @@ open class MultiLoader(private val project: Project) {
 
     fun addDependency(
         repository: String = "",
-        configuration: String = "implementation",
+        configuration: String = if (isCommon) "compileOnly" else "implementation",
         vararg configurations: String = arrayOf(),
         dependency: String = "",
         excludedModules: List<String> = listOf(),
@@ -965,15 +964,11 @@ open class MultiLoader(private val project: Project) {
                 project.pluginManager.apply("net.minecraftforge.jarjar")
                 project.extensions.configure<JarJarExtension> { register() }
 
-                val commonMain = project.rootProject.project(":common")
-                    .extensions.getByType<SourceSetContainer>()["main"]
-
                 project.extensions.getByType<MinecraftExtensionForProject>().runs {
                     configureEach {
                         mods {
                             register(mod.id) {
                                 source(getSourceSets()["main"])
-                                source(commonMain)
                             }
                         }
                     }
@@ -1071,9 +1066,12 @@ open class MultiLoader(private val project: Project) {
         configureTask("validateAccessWidener", "processResources")
         configureTask("createMinecraftArtifacts", "processResources")
 
+        val mainResourcesTask = getSourceSets()["main"].processResourcesTaskName
         project.tasks.withType<ProcessResources>().configureEach {
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
             val extra = getExtraSourceSets().firstOrNull { it.processResourcesTaskName == name }
+            if (name != mainResourcesTask && extra == null) return@configureEach
+
             if (isForge && extra != null) {
                 from(generatedResourcesDir) { exclude("META-INF/mods.toml") }
                 from(resourcesDir) { exclude("META-INF/mods.toml") }
