@@ -46,7 +46,13 @@ class MultiLoaderPlugin : Plugin<ExtensionAware> {
 
                 target.rootProject.name = target.extra["mod.name"] as String
 
-                val loaders = listOf("common", "fabric", "forge", "neoforge")
+                val supportedLoaders = listOf("fabric", "forge", "neoforge")
+                val selectedLoaders = target.providers.gradleProperty("multiloader.loaders").orNull
+                    ?.split(",")?.map { it.trim() } ?: supportedLoaders
+                require(selectedLoaders.isNotEmpty() && selectedLoaders.all { it in supportedLoaders }) {
+                    "multiloader.loaders must contain a comma-separated selection of fabric, forge, neoforge"
+                }
+                val loaders = listOf("common") + supportedLoaders.filter { it in selectedLoaders }
                 loaders.forEach {
                     target.include(it)
                     target.rootDir.resolve(it).mkdirs()
@@ -127,7 +133,9 @@ open class MultiLoader(private val project: Project) {
     class ClassInfo(val entrypointName: String, val classFilePath: String)
 
     private val updateDependencies = UpdateDependencies(project, this)
-    private val loaderProjects = listOf("common", "fabric", "forge", "neoforge")
+    private val loaderProjects: List<String>
+        get() = listOf("common", "fabric", "forge", "neoforge")
+            .filter { project.rootProject.findProject(":$it") != null }
     private val entrypoints = mutableListOf(
         "client" to "net.fabricmc.api.ClientModInitializer",
         "main" to "net.fabricmc.api.ModInitializer",
@@ -560,19 +568,21 @@ open class MultiLoader(private val project: Project) {
             duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
             manifest {
-                val forgeMixin = project.rootProject.project(":forge")
-                    .file("src/main/resources")
-                    .resolve("${mod.idDashed}.forge.mixins.json")
+                val forgeMixin = project.rootProject.findProject(":forge")
+                    ?.file("src/main/resources")
+                    ?.resolve("${mod.idDashed}.forge.mixins.json")
                 when {
-                    forgeMixin.exists() -> attributes["MixinConfigs"] = forgeMixin.name
+                    forgeMixin != null && forgeMixin.exists() -> attributes["MixinConfigs"] = forgeMixin.name
                     mixinFile.exists() -> attributes["MixinConfigs"] = mixinFile.name
                 }
             }
 
-            val forgeJarJar = project.rootProject.project(":forge").tasks.named<Jar>("jarJar")
-            dependsOn(forgeJarJar)
-            from(forgeJarJar.flatMap { it.archiveFile }.map { project.zipTree(it.asFile) }) {
-                include("META-INF/jarjar/**")
+            project.rootProject.findProject(":forge")?.let { forge ->
+                val forgeJarJar = forge.tasks.named<Jar>("jarJar")
+                dependsOn(forgeJarJar)
+                from(forgeJarJar.flatMap { it.archiveFile }.map { project.zipTree(it.asFile) }) {
+                    include("META-INF/jarjar/**")
+                }
             }
 
             loaderProjects.forEach { dependsOn(":$it:classes") }
@@ -605,11 +615,11 @@ open class MultiLoader(private val project: Project) {
                 duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
                 manifest {
-                    val forgeMixin = project.rootProject.project(":forge")
-                        .file("src/main/resources")
-                        .resolve("${mod.idDashed}.forge.mixins.json")
+                    val forgeMixin = project.rootProject.findProject(":forge")
+                        ?.file("src/main/resources")
+                        ?.resolve("${mod.idDashed}.forge.mixins.json")
                     when {
-                        forgeMixin.exists() -> attributes["MixinConfigs"] = forgeMixin.name
+                        forgeMixin != null && forgeMixin.exists() -> attributes["MixinConfigs"] = forgeMixin.name
                         mixinFile.exists() -> attributes["MixinConfigs"] = mixinFile.name
                     }
                 }
@@ -650,7 +660,8 @@ open class MultiLoader(private val project: Project) {
                 else -> STABLE
             }
             type.set(releaseType)
-            listOf("fabric", "forge", "neoforge", "quilt").forEach { modLoaders.add(it) }
+            loaderProjects.filter { it != "common" }.forEach { modLoaders.add(it) }
+            if ("fabric" in loaderProjects) modLoaders.add("quilt")
 
             modrinth {
                 projectId.set(mod.modrinth)
